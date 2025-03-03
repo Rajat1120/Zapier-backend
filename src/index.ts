@@ -1,4 +1,3 @@
-import { ZapRunOutbox } from "./../node_modules/.prisma/client/index.d";
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 

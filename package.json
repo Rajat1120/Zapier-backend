@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "start": "tsc -b && node dist/index.js",
-    "run": "tsc -b && node dist/process.js"
+    "run": "tsc -b && node dist/process.js",
+    "dev": "tsc -b && node dist/primary-backend/primary.js"
   },
   "keywords": [],
   "author": "",
@@ -12,7 +13,9 @@
   "description": "",
   "dependencies": {
     "@prisma/client": "^6.4.1",
+    "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
+    "cors": "^2.8.5",
     "express": "^4.21.2",
     "kafkajs": "^2.2.4",
     "prisma": "^6.4.1"
