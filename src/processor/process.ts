@@ -12,10 +12,13 @@ async function main() {
   const producer = kafka.producer();
   await producer.connect();
   while (true) {
+    await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second
     const pendingRows = await client.zapRunOutbox.findMany({
       where: {},
       take: 10,
     });
+
+    if (pendingRows.length === 0) break;
 
     await producer.send({
       topic: TOPIC_NAME,
