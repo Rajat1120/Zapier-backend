@@ -18,11 +18,16 @@ async function main() {
       take: 10,
     });
 
-    if (pendingRows.length === 0) break;
+    console.log(pendingRows);
+    // if (pendingRows.length === 0) break;
 
     await producer.send({
       topic: TOPIC_NAME,
-      messages: pendingRows.map((row) => ({ value: row.zapRunId })),
+      messages: pendingRows.map((r) => {
+        return {
+          value: JSON.stringify({ zapRunId: r.zapRunId, stage: 0 }),
+        };
+      }),
     });
 
     await client.zapRunOutbox.deleteMany({
