@@ -1,35 +1,80 @@
 import express from "express";
+import cors from "cors";
 import { PrismaClient } from "@prisma/client";
+import { userRouter } from "./router/user";
+import { zapRouter } from "./router/zap";
+import { triggerRouter } from "./router/trigger";
+import { actionRouter } from "./router/action";
+import { Producer } from "./processor/process";
+import { Consumer } from "./worker/worker";
 
 const client = new PrismaClient();
 
+// Add error handling for background processes
+Producer().catch((error) => {
+  console.error("Producer failed:", error);
+  // Don't exit the process, just log the error
+});
+
+Consumer().catch((error) => {
+  console.error("Consumer failed:", error);
+  // Don't exit the process, just log the error
+});
+
 const app = express();
+
+app.use(
+  cors({
+    origin: "http://localhost:3000", // or "*" for all
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
+app.options("*", cors()); // Allow preflight
+
+// Add a health check endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
 
 app.post("/hooks/catch/:userId/:zapId", async (req, res) => {
   const userId = req.params.userId;
   const zapId = req.params.zapId;
   const body = req.body;
 
-  // store into db a new trigger
-  await client.$transaction(async (tx) => {
-    const run = await client.zapRun.create({
-      data: {
-        zapId: zapId,
-        metadata: body,
-      },
+  try {
+    // store into db a new trigger
+    await client.$transaction(async (tx: any) => {
+      const run = await client.zapRun.create({
+        data: {
+          zapId: zapId,
+          metadata: body,
+        },
+      });
+
+      await client.zapRunOutbox.create({
+        data: {
+          zapRunId: run.id,
+        },
+      });
     });
 
-    await client.zapRunOutbox.create({
-      data: {
-        zapRunId: run.id,
-      },
-    });
-  });
-
-  res.json({ message: "webhook received" });
+    res.json({ message: "webhook received" });
+  } catch (error) {
+    console.error("Webhook error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-app.listen(3000, () => {
-  console.log("Server is running on port 3000");
+app.use("/api/v1/user", userRouter);
+app.use("/api/v1/zap", zapRouter);
+app.use("/api/v1/trigger", triggerRouter);
+app.use("/api/v1/action", actionRouter);
+
+const PORT = 8080;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server is running on port ${PORT}`);
 });

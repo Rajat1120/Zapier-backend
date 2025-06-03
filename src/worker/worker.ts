@@ -11,7 +11,7 @@ const kafka = new Kafka({
 });
 const TOPIC_NAME = "zap-events";
 
-async function main() {
+export async function Consumer() {
   const consumer = kafka.consumer({ groupId: "main-worker" });
   await consumer.connect();
   const producer = kafka.producer();
@@ -54,7 +54,7 @@ async function main() {
         },
       });
       const currentAction = zapRunDetails?.zap.actions.find(
-        (x) => x.sortingOrder === stage
+        (x: any) => x.sortingOrder === stage
       );
 
       if (!currentAction) {
@@ -121,5 +121,3 @@ async function main() {
     },
   });
 }
-
-main();

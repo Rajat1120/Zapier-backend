@@ -8,7 +8,7 @@ const kafka = new Kafka({
 const TOPIC_NAME = "zap-events";
 const client = new PrismaClient();
 
-async function main() {
+export async function Producer() {
   const producer = kafka.producer();
   await producer.connect();
   while (true) {
@@ -23,7 +23,7 @@ async function main() {
 
     await producer.send({
       topic: TOPIC_NAME,
-      messages: pendingRows.map((r) => {
+      messages: pendingRows.map((r: any) => {
         return {
           value: JSON.stringify({ zapRunId: r.zapRunId, stage: 0 }),
         };
@@ -33,11 +33,9 @@ async function main() {
     await client.zapRunOutbox.deleteMany({
       where: {
         id: {
-          in: pendingRows.map((row) => row.id),
+          in: pendingRows.map((row: any) => row.id),
         },
       },
     });
   }
 }
-
-main();

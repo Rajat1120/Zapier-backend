@@ -53,6 +53,7 @@ router.post("/signin", async (req, res): Promise<any> => {
       password: parsedData.data.password,
     },
   });
+  console.log("run");
 
   if (!user) {
     return res.status(403).json({ message: "User not found" });
