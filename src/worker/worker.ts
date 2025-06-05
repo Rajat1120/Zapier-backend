@@ -5,9 +5,17 @@ import { parse } from "./parser";
 import { sendEmail } from "./email";
 import { JsonObject } from "@prisma/client/runtime/library";
 
+const broker = process.env.KAFKA_BROKER || "";
+
 const kafka = new Kafka({
   clientId: "outbox-processor",
-  brokers: ["localhost:9092"],
+  brokers: [broker],
+  ssl: true,
+  sasl: {
+    mechanism: "plain",
+    username: process.env.KAFKA_USERNAME || "",
+    password: process.env.KAFKA_PASSWORD || "",
+  },
 });
 const TOPIC_NAME = "zap-events";
 
@@ -16,7 +24,7 @@ export async function Consumer() {
   await consumer.connect();
   const producer = kafka.producer();
   await producer.connect();
-  console.log("run");
+  
 
   await consumer.subscribe({ topic: TOPIC_NAME, fromBeginning: true });
 

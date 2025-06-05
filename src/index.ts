@@ -10,6 +10,8 @@ import { Consumer } from "./worker/worker";
 
 const client = new PrismaClient();
 
+
+
 // Add error handling for background processes
 Producer().catch((error) => {
   console.error("Producer failed:", error);
@@ -23,21 +25,10 @@ Consumer().catch((error) => {
 
 const app = express();
 
-app.use(
-  cors({
-    origin: "http://localhost:3000", // or "*" for all
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    credentials: true,
-  })
-);
+// ✅ Enable CORS for all origins (development only)
+app.use(cors());
 
 app.use(express.json());
-app.options("*", cors()); // Allow preflight
-
-// Add a health check endpoint
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
-});
 
 app.post("/hooks/catch/:userId/:zapId", async (req, res) => {
   const userId = req.params.userId;
@@ -72,6 +63,10 @@ app.use("/api/v1/user", userRouter);
 app.use("/api/v1/zap", zapRouter);
 app.use("/api/v1/trigger", triggerRouter);
 app.use("/api/v1/action", actionRouter);
+
+app.get("/", (req, res) => {
+  res.status(200).send("🚀 Zapier backend is live");
+});
 
 const PORT = 8080;
 
