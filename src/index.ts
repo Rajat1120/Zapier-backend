@@ -10,8 +10,6 @@ import { Consumer } from "./worker/worker";
 
 const client = new PrismaClient();
 
-
-
 // Add error handling for background processes
 Producer().catch((error) => {
   console.error("Producer failed:", error);
@@ -68,7 +66,7 @@ app.get("/", (req, res) => {
   res.status(200).send("🚀 Zapier backend is live");
 });
 
-const PORT = 8080;
+const PORT = 8000;
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server is running on port ${PORT}`);
