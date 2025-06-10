@@ -53,7 +53,6 @@ router.post("/signin", async (req, res): Promise<any> => {
       password: parsedData.data.password,
     },
   });
-  console.log("run");
 
   if (!user) {
     return res.status(403).json({ message: "User not found" });
@@ -69,6 +68,8 @@ router.post("/signin", async (req, res): Promise<any> => {
 
   res.json({
     token: token,
+    email: user.email,
+    name: user.name,
   });
 });
 
