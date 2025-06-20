@@ -72,7 +72,7 @@ export async function Consumer() {
 
       const zapRunMetadata = zapRunDetails?.metadata;
 
-      if (currentAction.type.id === "email") {
+      if (currentAction.type && currentAction.type.id === "email") {
         console.log("Sending email");
 
         const body = parse(
@@ -87,7 +87,7 @@ export async function Consumer() {
         await sendEmail(to, body);
       }
 
-      if (currentAction.type.id === "solana_send") {
+      if (currentAction.type && currentAction.type.id === "solana_send") {
         console.log("Sending SOL");
         const amount = parse(
           (currentAction.metadata as JsonObject)?.amount as string,
