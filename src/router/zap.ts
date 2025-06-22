@@ -25,28 +25,32 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
         actions: {
           create: parsedData.data.actions.map((x, index) => ({
             actionId: x.availableActionId,
-            sortingOrder: index,
+            sortingOrder: +x.sortingOrder,
             metadata: x.actionMetadata,
+            
           })),
         },
       },
     });
 
-    const trigger = await tx.trigger.create({
-      data: {
-        triggerId: parsedData.data.availableTriggerId,
-        zapId: zap.id,
-      },
-    });
+      if(parsedData.data.availableTriggerId){
 
-    await tx.zap.update({
-      where: {
-        id: zap.id,
-      },
-      data: {
-        triggerId: trigger.id,
-      },
-    });
+        const trigger = await tx.trigger.create({
+          data: {
+            triggerId: parsedData.data.availableTriggerId,
+            zapId: zap.id,
+          },
+        });
+        
+        await tx.zap.update({
+          where: {
+            id: zap.id,
+          },
+          data: {
+            triggerId: trigger.id,
+          },
+        });
+      }
 
     return zap.id;
   });
