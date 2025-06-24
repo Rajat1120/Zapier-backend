@@ -27,6 +27,7 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
             actionId: x.availableActionId,
             sortingOrder: +x.sortingOrder,
             metadata: x.actionMetadata,
+            index: x.index,
           })),
         },
       },
@@ -134,6 +135,7 @@ router.post("/:zapId", authMiddleware, async (req, res): Promise<any> => {
         actionId: action.actionId,
         sortingOrder: action.sortingOrder,
         metadata: action.metadata,
+        index: action.index,
       },
     });
   }

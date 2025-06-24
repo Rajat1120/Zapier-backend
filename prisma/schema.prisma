@@ -42,6 +42,7 @@ model Action {
   id           String           @id @default(uuid())
   zapId        String
   actionId     String?
+  index        Int
   metadata     Json             @default("{}")
   sortingOrder Int              @default(0)
   type         AvailableActions? @relation(fields: [actionId], references: [id])

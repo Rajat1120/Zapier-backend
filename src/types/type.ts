@@ -18,7 +18,7 @@ export const ZapCreateSchema = z.object({
     z.object({
       availableActionId: z.string(),
       actionMetadata: z.any().optional(),
-
+      index: z.number(),
       sortingOrder: z.string(),
     })
   ),
@@ -30,7 +30,7 @@ export const ZapUpdateSchema = z.object({
     z.object({
       actionId: z.string(),
       metadata: z.any().optional(),
-
+      index: z.number(),
       sortingOrder: z.number(),
     })
   ),
