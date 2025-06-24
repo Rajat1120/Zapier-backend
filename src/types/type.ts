@@ -18,8 +18,20 @@ export const ZapCreateSchema = z.object({
     z.object({
       availableActionId: z.string(),
       actionMetadata: z.any().optional(),
-      
-      sortingOrder: z.string()
+
+      sortingOrder: z.string(),
+    })
+  ),
+});
+
+export const ZapUpdateSchema = z.object({
+  zapId: z.string(),
+  actions: z.array(
+    z.object({
+      actionId: z.string(),
+      metadata: z.any().optional(),
+
+      sortingOrder: z.number(),
     })
   ),
 });

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authMiddleware } from "../middleware";
 import { prismaClient } from "../db/database";
-import { ZapCreateSchema } from "../types/type";
+import { ZapCreateSchema, ZapUpdateSchema } from "../types/type";
 
 const router = Router();
 
@@ -27,30 +27,28 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
             actionId: x.availableActionId,
             sortingOrder: +x.sortingOrder,
             metadata: x.actionMetadata,
-            
           })),
         },
       },
     });
 
-      if(parsedData.data.availableTriggerId){
+    if (parsedData.data.availableTriggerId) {
+      const trigger = await tx.trigger.create({
+        data: {
+          triggerId: parsedData.data.availableTriggerId,
+          zapId: zap.id,
+        },
+      });
 
-        const trigger = await tx.trigger.create({
-          data: {
-            triggerId: parsedData.data.availableTriggerId,
-            zapId: zap.id,
-          },
-        });
-        
-        await tx.zap.update({
-          where: {
-            id: zap.id,
-          },
-          data: {
-            triggerId: trigger.id,
-          },
-        });
-      }
+      await tx.zap.update({
+        where: {
+          id: zap.id,
+        },
+        data: {
+          triggerId: trigger.id,
+        },
+      });
+    }
 
     return zap.id;
   });
@@ -111,6 +109,37 @@ router.get("/:zapId", authMiddleware, async (req, res): Promise<any> => {
 
   return res.json({
     zap,
+  });
+});
+
+router.post("/:zapId", authMiddleware, async (req, res): Promise<any> => {
+  // @ts-ignore
+  const id: string = req.id;
+  const body = req.body;
+  const parsedData = ZapUpdateSchema.safeParse(body);
+
+  if (!parsedData.success) {
+    return res.status(411).json({
+      message: "Incorrect update inputs",
+    });
+  }
+
+  const zapId = parsedData.data.zapId;
+
+  // Create each action as a new row in the action table
+  for (const action of parsedData.data.actions) {
+    await prismaClient.action.create({
+      data: {
+        zapId,
+        actionId: action.actionId,
+        sortingOrder: action.sortingOrder,
+        metadata: action.metadata,
+      },
+    });
+  }
+
+  return res.status(200).json({
+    message: "Actions inserted successfully",
   });
 });
 
