@@ -115,7 +115,7 @@ router.get("/:zapId", authMiddleware, async (req, res): Promise<any> => {
 
 router.post("/:zapId", authMiddleware, async (req, res): Promise<any> => {
   // @ts-ignore
-  const id: string = req.id;
+  const userId: string = req.id;
   const body = req.body;
   const parsedData = ZapUpdateSchema.safeParse(body);
 
@@ -125,23 +125,43 @@ router.post("/:zapId", authMiddleware, async (req, res): Promise<any> => {
     });
   }
 
-  const zapId = parsedData.data.zapId;
+  const { zapId, actions } = parsedData.data;
 
-  // Create each action as a new row in the action table
-  for (const action of parsedData.data.actions) {
-    await prismaClient.action.create({
-      data: {
-        zapId,
-        actionId: action.actionId,
+  for (const action of actions) {
+    const existing = await prismaClient.action.findFirst({
+      where: {
+        zapId: zapId,
         sortingOrder: action.sortingOrder,
-        metadata: action.metadata,
-        index: action.index,
       },
     });
+
+    if (existing) {
+      // Update the index if the action exists
+      await prismaClient.action.update({
+        where: {
+          id: existing.id,
+        },
+        data: {
+          index: action.index,
+          metadata: action.metadata, // Optional: in case metadata also changes
+        },
+      });
+    } else {
+      // Create a new action
+      await prismaClient.action.create({
+        data: {
+          zapId,
+          actionId: action.actionId,
+          sortingOrder: action.sortingOrder,
+          metadata: action.metadata,
+          index: action.index,
+        },
+      });
+    }
   }
 
   return res.status(200).json({
-    message: "Actions inserted successfully",
+    message: "Actions updated/inserted successfully",
   });
 });
 
