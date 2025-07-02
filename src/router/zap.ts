@@ -144,6 +144,7 @@ router.post("/:zapId", authMiddleware, async (req, res): Promise<any> => {
         data: {
           index: action.index,
           metadata: action.metadata, // Optional: in case metadata also changes
+          actionId: action.actionId,
         },
       });
     } else {
