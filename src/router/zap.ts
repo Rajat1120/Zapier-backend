@@ -127,6 +127,33 @@ router.post("/:zapId", authMiddleware, async (req, res): Promise<any> => {
 
   const { zapId, actions } = parsedData.data;
 
+  // Step 1: Get all existing actions for this zap
+  const existingActions = await prismaClient.action.findMany({
+    where: {
+      zapId: zapId,
+    },
+  });
+
+  // Step 2: Get sortingOrders from the new actions array
+  const newSortingOrders = actions.map((action) => action.sortingOrder);
+
+  // Step 3: Find actions that need to be deleted (exist in DB but not in new actions)
+  const actionsToDelete = existingActions.filter(
+    (existing) => !newSortingOrders.includes(existing.sortingOrder)
+  );
+
+  // Step 4: Delete actions that are no longer needed
+  if (actionsToDelete.length > 0) {
+    await prismaClient.action.deleteMany({
+      where: {
+        id: {
+          in: actionsToDelete.map((action) => action.id),
+        },
+      },
+    });
+  }
+
+  // Step 5: Update or create actions from the new actions array
   for (const action of actions) {
     const existing = await prismaClient.action.findFirst({
       where: {
@@ -136,14 +163,14 @@ router.post("/:zapId", authMiddleware, async (req, res): Promise<any> => {
     });
 
     if (existing) {
-      // Update the index if the action exists
+      // Update the existing action
       await prismaClient.action.update({
         where: {
           id: existing.id,
         },
         data: {
           index: action.index,
-          metadata: action.metadata, // Optional: in case metadata also changes
+          metadata: action.metadata,
           actionId: action.actionId,
         },
       });
@@ -162,7 +189,7 @@ router.post("/:zapId", authMiddleware, async (req, res): Promise<any> => {
   }
 
   return res.status(200).json({
-    message: "Actions updated/inserted successfully",
+    message: "Actions updated successfully",
   });
 });
 
