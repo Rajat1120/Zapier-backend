@@ -7,6 +7,7 @@ import { triggerRouter } from "./router/trigger";
 import { actionRouter } from "./router/action";
 import { Producer } from "./processor/process";
 import { Consumer } from "./worker/worker";
+import { googleTokenRouter } from "./router/googleTokenRouter";
 
 const client = new PrismaClient();
 
@@ -61,6 +62,7 @@ app.use("/api/v1/user", userRouter);
 app.use("/api/v1/zap", zapRouter);
 app.use("/api/v1/trigger", triggerRouter);
 app.use("/api/v1/action", actionRouter);
+app.use("/api/google-token", googleTokenRouter);
 
 app.get("/", (req, res) => {
   res.status(200).send("🚀 Zapier backend is live");

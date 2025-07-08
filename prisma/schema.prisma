@@ -13,6 +13,7 @@ model User {
   email    String  @unique
   password String
   zaps     Zap[]
+  googleToken google_tokens?
 
  
 }
@@ -25,6 +26,7 @@ model Zap {
   trigger   Trigger?
   user      User     @relation(fields: [userId], references: [id])
   zapRuns   ZapRun[]
+  @@index([userId])
 
  
 }
@@ -47,6 +49,7 @@ model Action {
   sortingOrder Int              @default(0)
   type         AvailableActions? @relation(fields: [actionId], references: [id])
   zap          Zap              @relation(fields: [zapId], references: [id])
+    @@index([zapId])
   
   
 }
@@ -56,6 +59,7 @@ model AvailableActions {
   name    String
   image   String   @default("")
   actions Action[]
+  @@index([name])
 }
 
 model AvailableTriggers {
@@ -63,6 +67,7 @@ model AvailableTriggers {
   name     String
   image    String    @default("")
   triggers Trigger[]
+  @@index([name])
 }
 
 model ZapRun {
@@ -71,6 +76,7 @@ model ZapRun {
   metadata     Json
   zap          Zap           @relation(fields: [zapId], references: [id])
   zapRunOutbox ZapRunOutbox?
+   @@index([zapId])
 }
 
 model ZapRunOutbox {
@@ -79,4 +85,16 @@ model ZapRunOutbox {
   zapRun   ZapRun @relation(fields: [zapRunId], references: [id])
 }
 
+model google_tokens {
+  id            String   @id @default(uuid())
+  userId        Int      @unique
+  access_token  String
+  refresh_token String
+  scopes        String[]
+  expiresAt     DateTime
+  updatedAt     DateTime
+
+  user          User     @relation(fields: [userId], references: [id])
+   @@index([userId])
+}
 
