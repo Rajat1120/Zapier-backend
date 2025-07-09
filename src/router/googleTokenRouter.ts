@@ -8,13 +8,14 @@ interface GoogleTokenPayload {
   refresh_token: string;
   scopes: string[];
   expires_in: number;
+  email: string;
 }
 
 router.post("/", authMiddleware, async (req, res): Promise<any> => {
   //@ts-ignore
   const userId = parseInt(req.id); // coming from auth middleware
   const token: GoogleTokenPayload = req.body;
-  const { access_token, refresh_token, scopes, expires_in } = token;
+  const { access_token, refresh_token, scopes, expires_in, email } = token;
 
   if (!access_token || !refresh_token || !scopes || !expires_in) {
     return res.status(400).json({ message: "Missing token fields" });
@@ -42,6 +43,7 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
         scopes: mergedScopes,
         expiresAt: expiresAtIST,
         updatedAt: updatedAtIST,
+        email,
       },
       create: {
         userId,
@@ -50,6 +52,7 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
         scopes: mergedScopes,
         expiresAt: expiresAtIST,
         updatedAt: updatedAtIST,
+        email,
       },
     });
 
@@ -67,7 +70,7 @@ router.get("/", authMiddleware, async (req, res): Promise<any> => {
 
     const existing = await prismaClient.google_tokens.findUnique({
       where: { userId },
-      select: { scopes: true },
+      select: { scopes: true, email: true },
     });
 
     if (!existing) {
@@ -76,7 +79,9 @@ router.get("/", authMiddleware, async (req, res): Promise<any> => {
         .json({ message: "No token found for user", scopes: [] });
     }
 
-    return res.status(200).json({ scopes: existing.scopes });
+    return res
+      .status(200)
+      .json({ scopes: existing.scopes, email: existing.email });
   } catch (error) {
     console.error("Error fetching scopes:", error);
     return res.status(500).json({ message: "Internal server error" });

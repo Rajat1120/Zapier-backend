@@ -93,6 +93,7 @@ model google_tokens {
   scopes        String[]
   expiresAt     DateTime
   updatedAt     DateTime
+  email         String
 
   user          User     @relation(fields: [userId], references: [id])
    @@index([userId])
