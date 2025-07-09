@@ -31,7 +31,12 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
   const mergedScopes = Array.from(new Set([...existingScopes, ...scopes]));
 
   try {
-    const expiresAt = new Date(Date.now() + expires_in * 1000);
+    const expiresAt = new Date(Date.now() + expires_in * 1000).toLocaleString(
+      "en-IN",
+      {
+        timeZone: "Asia/Kolkata",
+      }
+    );
     const updatedAt = new Date();
 
     await prismaClient.google_tokens.upsert({
