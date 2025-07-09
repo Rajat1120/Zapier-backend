@@ -29,32 +29,27 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
 
   // Merge and deduplicate scopes
   const mergedScopes = Array.from(new Set([...existingScopes, ...scopes]));
-
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 mins in ms
+  const expiresAtUTC = new Date(Date.now() + expires_in * 1000);
+  const expiresAtIST = new Date(expiresAtUTC.getTime() + istOffset);
+  const updatedAtIST = new Date(Date.now() + istOffset);
   try {
-    const expiresAt = new Date(Date.now() + expires_in * 1000).toLocaleString(
-      "en-IN",
-      {
-        timeZone: "Asia/Kolkata",
-      }
-    );
-    const updatedAt = new Date();
-
     await prismaClient.google_tokens.upsert({
       where: { userId },
       update: {
         access_token,
         refresh_token,
         scopes: mergedScopes,
-        expiresAt,
-        updatedAt,
+        expiresAt: expiresAtIST,
+        updatedAt: updatedAtIST,
       },
       create: {
         userId,
         access_token,
         refresh_token,
         scopes: mergedScopes,
-        expiresAt,
-        updatedAt,
+        expiresAt: expiresAtIST,
+        updatedAt: updatedAtIST,
       },
     });
 
