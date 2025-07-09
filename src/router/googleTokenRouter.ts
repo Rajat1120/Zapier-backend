@@ -20,6 +20,16 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
     return res.status(400).json({ message: "Missing token fields" });
   }
 
+  const existing = await prismaClient.google_tokens.findUnique({
+    where: { userId },
+    select: { scopes: true },
+  });
+
+  const existingScopes = existing?.scopes || [];
+
+  // Merge and deduplicate scopes
+  const mergedScopes = Array.from(new Set([...existingScopes, ...scopes]));
+
   try {
     const expiresAt = new Date(Date.now() + expires_in * 1000);
     const updatedAt = new Date();
@@ -29,7 +39,7 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
       update: {
         access_token,
         refresh_token,
-        scopes,
+        scopes: mergedScopes,
         expiresAt,
         updatedAt,
       },
@@ -37,7 +47,7 @@ router.post("/", authMiddleware, async (req, res): Promise<any> => {
         userId,
         access_token,
         refresh_token,
-        scopes,
+        scopes: mergedScopes,
         expiresAt,
         updatedAt,
       },
