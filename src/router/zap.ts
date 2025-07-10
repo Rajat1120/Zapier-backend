@@ -188,6 +188,19 @@ router.post("/:zapId", authMiddleware, async (req, res): Promise<any> => {
     }
   }
 
+  // Update the Trigger table if the trigger action (index === 0) exists
+  const triggerAction = actions.find((action) => action.index === 0);
+
+  if (triggerAction) {
+    await prismaClient.trigger.updateMany({
+      where: { zapId },
+      data: {
+        triggerId: triggerAction.actionId || "",
+        metadata: triggerAction.metadata,
+      },
+    });
+  }
+
   return res.status(200).json({
     message: "Actions updated successfully",
   });

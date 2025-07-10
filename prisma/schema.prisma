@@ -32,18 +32,20 @@ model Zap {
 }
 
 model Trigger {
-  id        String            @id @default(uuid())
-  zapId     String            @unique
-  triggerId String
-  metadata  Json              @default("{}")
-  type      AvailableTriggers @relation(fields: [triggerId], references: [id])
-  zap       Zap               @relation(fields: [zapId], references: [id])
+  id           String            @id @default(uuid())
+  zapId        String            @unique
+  triggerId    String
+  triggerEvent String?
+  metadata     Json              @default("{}")
+  type         AvailableTriggers @relation(fields: [triggerId], references: [id])
+  zap          Zap               @relation(fields: [zapId], references: [id])
 }
 
 model Action {
   id           String           @id @default(uuid())
   zapId        String
   actionId     String?
+  actionEvent  String?
   index        Int
   metadata     Json             @default("{}")
   sortingOrder Int              @default(0)
