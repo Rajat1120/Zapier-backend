@@ -29,7 +29,7 @@ router.post("/watch", async (req, res): Promise<any> => {
       {
         id: channelId,
         type: "web_hook",
-        address: `https://${process.env.BACKEND_URL}/api/webhook/google-drive`,
+        address: `${process.env.BACKEND_URL}/api/webhook/google-drive`,
       },
       {
         headers: {
@@ -60,7 +60,7 @@ router.post("/watch", async (req, res): Promise<any> => {
 
 router.post("/webhook/google-drive", async (req, res) => {
   const headers = req.headers;
-
+  console.log("📩 Raw headers:", req.headers);
   const channelId = headers["x-goog-channel-id"];
   const state = headers["x-goog-resource-state"];
   const resourceId = headers["x-goog-resource-id"];
