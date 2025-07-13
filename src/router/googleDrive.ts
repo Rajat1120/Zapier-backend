@@ -23,14 +23,8 @@ router.post("/watch", async (req, res): Promise<any> => {
     const accessToken = tokenRecord.access_token;
     const channelId = uuidv4();
 
-    // 2. Call Google Drive API to start watching
-    const response = await axios.post(
-      "https://www.googleapis.com/drive/v3/files/root/watch",
-      {
-        id: channelId,
-        type: "web_hook",
-        address: `${process.env.BACKEND_URL}/api/webhook/google-drive`,
-      },
+    const startPageToken = await axios.get(
+      "https://www.googleapis.com/drive/v3/changes/startPageToken",
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -39,6 +33,23 @@ router.post("/watch", async (req, res): Promise<any> => {
       }
     );
 
+    const response = await axios.post(
+      "https://www.googleapis.com/drive/v3/changes/watch",
+      {
+        id: channelId,
+        type: "web_hook",
+        address: `${process.env.BACKEND_URL}/api/google-drive/webhook`,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        params: {
+          pageToken: startPageToken.data.startPageToken,
+        },
+      }
+    );
     const { expiration, resourceId } = response.data;
 
     // 3. Store channel data in DB
@@ -58,7 +69,7 @@ router.post("/watch", async (req, res): Promise<any> => {
   }
 });
 
-router.post("/webhook/google-drive", async (req, res) => {
+router.post("/webhook", async (req, res) => {
   const headers = req.headers;
   console.log("📩 Raw headers:", req.headers);
   const channelId = headers["x-goog-channel-id"];
