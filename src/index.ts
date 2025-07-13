@@ -1,3 +1,4 @@
+import googleDriveRouter from "./router/googleDrive";
 import express from "express";
 import cors from "cors";
 import { PrismaClient } from "@prisma/client";
@@ -63,6 +64,7 @@ app.use("/api/v1/zap", zapRouter);
 app.use("/api/v1/trigger", triggerRouter);
 app.use("/api/v1/action", actionRouter);
 app.use("/api/google-token", googleTokenRouter);
+app.use("/api/google-drive", googleDriveRouter);
 
 app.get("/", (req, res) => {
   res.status(200).send("🚀 Zapier backend is live");

@@ -14,6 +14,7 @@ model User {
   password String
   zaps     Zap[]
   googleToken google_tokens?
+  google_drive_watches google_drive_watch[]
 
  
 }
@@ -99,5 +100,16 @@ model google_tokens {
 
   user          User     @relation(fields: [userId], references: [id])
    @@index([userId])
+}
+
+
+model google_drive_watch {
+  id         String   @id @default(uuid())
+  userId     Int
+  channelId  String   @unique
+  resourceId String
+  expiration DateTime
+
+  user       User     @relation(fields: [userId], references: [id])
 }
 
