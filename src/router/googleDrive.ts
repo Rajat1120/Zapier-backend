@@ -164,6 +164,16 @@ router.post("/webhook", async (req, res) => {
         console.log("⏩ Ignoring file (not a doc):", file.name, file.mimeType);
       }
     }
+
+    setInterval(() => {
+      const now = Date.now();
+      for (const [key, time] of recentlyProcessed.entries()) {
+        if (now - time > 5 * 60 * 1000) {
+          recentlyProcessed.delete(key);
+        }
+      }
+    }, 60 * 1000);
+
     // Update the stored startPageToken to continue tracking future changes
     await prismaClient.google_drive_watch.update({
       where: { channelId: channelId as string },
