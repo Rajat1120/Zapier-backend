@@ -1,16 +1,19 @@
+// Google Drive integration routes: Watch for file changes and handle webhook notifications
 import { Router } from "express";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import { prismaClient } from "../db/database";
+import { getTokenForUser } from "../utils/googleTokens";
 
 const router = Router();
 
+// Route to initiate a Google Drive watch channel for detecting file changes
 // POST /api/google-drive/watch
 router.post("/watch", async (req, res): Promise<any> => {
   const { userId } = req.body;
 
   try {
-    // 1. Get access token from DB
+    // Fetch the user's access token from the database
     const tokenRecord = await prismaClient.google_tokens.findUnique({
       where: { userId },
       select: { access_token: true },
@@ -23,6 +26,7 @@ router.post("/watch", async (req, res): Promise<any> => {
     const accessToken = tokenRecord.access_token;
     const channelId = uuidv4();
 
+    // Get the current startPageToken for listing changes from Google Drive
     const startPageToken = await axios.get(
       "https://www.googleapis.com/drive/v3/changes/startPageToken",
       {
@@ -33,6 +37,7 @@ router.post("/watch", async (req, res): Promise<any> => {
       }
     );
 
+    // Create a new watch channel on the user's Google Drive changes
     const response = await axios.post(
       "https://www.googleapis.com/drive/v3/changes/watch",
       {
@@ -52,13 +57,14 @@ router.post("/watch", async (req, res): Promise<any> => {
     );
     const { expiration, resourceId } = response.data;
 
-    // 3. Store channel data in DB
+    // Store the new watch details in the database
     await prismaClient.google_drive_watch.create({
       data: {
         userId,
         channelId,
         resourceId,
         expiration: new Date(Number(expiration)),
+        startPageToken: startPageToken.data.startPageToken,
       },
     });
 
@@ -69,18 +75,72 @@ router.post("/watch", async (req, res): Promise<any> => {
   }
 });
 
+// Webhook route that Google calls when a file change is detected
 router.post("/webhook", async (req, res) => {
-  const headers = req.headers;
-  console.log("📩 Raw headers:", req.headers);
-  const channelId = headers["x-goog-channel-id"];
-  const state = headers["x-goog-resource-state"];
-  const resourceId = headers["x-goog-resource-id"];
+  try {
+    const { headers } = req;
 
-  console.log("📩 Drive webhook:", { channelId, state, resourceId });
+    let channelId = headers["x-goog-channel-id"];
 
-  // Look up user/channel in DB, then fetch latest file and run Zap
+    if (Array.isArray(channelId)) {
+      channelId = channelId[0];
+    }
 
-  res.status(200).send("ok");
+    // Find the corresponding watch entry in the database using the channel ID
+    const watch = await prismaClient.google_drive_watch.findFirst({
+      where: { channelId: channelId as string },
+    });
+
+    if (!watch) {
+      res.status(404).json({ message: "Watch not found" });
+      return;
+    }
+
+    // Fetch a valid access token for the user
+    const { access_token: accessToken } = await getTokenForUser(watch.userId);
+
+    const pageToken = watch.startPageToken;
+
+    // Retrieve the list of file changes from Google Drive
+    const { data } = await axios.get(
+      "https://www.googleapis.com/drive/v3/changes",
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        params: {
+          pageToken: pageToken,
+          fields: "changes(file(id,name,mimeType)),newStartPageToken",
+        },
+      }
+    );
+
+    for (const change of data.changes) {
+      const file = change.file;
+
+      // Only process Google Docs; ignore other file types
+      if (file?.mimeType === "application/vnd.google-apps.document") {
+        console.log("📄 Google Doc changed:", file.name);
+
+        // ✅ Run Zap here
+      } else {
+        console.log("⏩ Ignoring file (not a doc):", file.name, file.mimeType);
+      }
+    }
+
+    // Update the stored startPageToken to continue tracking future changes
+    await prismaClient.google_drive_watch.update({
+      where: { channelId: channelId as string },
+      data: {
+        startPageToken: data.newStartPageToken,
+      },
+    });
+
+    res.status(200).json({ message: "Webhook processed" });
+  } catch (error) {
+    console.error("Error processing webhook:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
 export default router;

@@ -108,6 +108,7 @@ model google_drive_watch {
   userId     Int
   channelId  String   @unique
   resourceId String
+  startPageToken  String 
   expiration DateTime
 
   user       User     @relation(fields: [userId], references: [id])
