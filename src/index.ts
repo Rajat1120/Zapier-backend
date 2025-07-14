@@ -9,6 +9,7 @@ import { actionRouter } from "./router/action";
 import { Producer } from "./processor/process";
 import { Consumer } from "./worker/worker";
 import { googleTokenRouter } from "./router/googleTokenRouter";
+import { refreshGoogleTokens } from "./cron/refreshGoogleTokens";
 
 const client = new PrismaClient();
 
@@ -69,6 +70,10 @@ app.use("/api/google-drive", googleDriveRouter);
 app.get("/", (req, res) => {
   res.status(200).send("🚀 Zapier backend is live");
 });
+
+setInterval(() => {
+  refreshGoogleTokens();
+}, 30 * 60 * 1000); // 30 mins
 
 const PORT = 8000;
 
