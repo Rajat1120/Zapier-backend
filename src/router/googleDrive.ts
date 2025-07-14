@@ -118,16 +118,41 @@ router.post("/webhook", async (req, res) => {
     for (const change of data.changes) {
       const file = change.file;
 
-      // Only process Google Docs; ignore other file types
-      if (file?.mimeType === "application/vnd.google-apps.document") {
-        console.log("📄 Google Doc changed:", file.name);
+      if (
+        file?.mimeType === "application/vnd.google-apps.document" &&
+        file?.createdTime === file?.modifiedTime
+      ) {
+        // Workaround: check if file was created recently (within 1 minute)
+        const fileMeta = await axios.get(
+          `https://www.googleapis.com/drive/v3/files/${file.id}`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+            params: {
+              fields: "createdTime,name,mimeType",
+            },
+          }
+        );
 
-        // ✅ Run Zap here
+        const createdAt = new Date(fileMeta.data.createdTime);
+        const now = new Date();
+
+        const timeDiffMs = now.getTime() - createdAt.getTime();
+        const timeDiffMinutes = timeDiffMs / (1000 * 60);
+
+        if (timeDiffMinutes < 1) {
+          // ✅ File was created in the last 1 minute
+          console.log("📄 NEW Google Doc created:", file.name);
+
+          // ➕ Your Zap or logic here
+        } else {
+          console.log("✏️ Existing doc modified, ignoring:", file.name);
+        }
       } else {
         console.log("⏩ Ignoring file (not a doc):", file.name, file.mimeType);
       }
     }
-
     // Update the stored startPageToken to continue tracking future changes
     await prismaClient.google_drive_watch.update({
       where: { channelId: channelId as string },
