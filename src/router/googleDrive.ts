@@ -115,14 +115,27 @@ router.post("/webhook", async (req, res) => {
       }
     );
 
+    // A simple in-memory cache to store processed file IDs for 2 minutes
+    const recentlyProcessed = new Map<string, number>();
+
     for (const change of data.changes) {
       const file = change.file;
+      const fileId = file?.id;
 
       if (
         file?.mimeType === "application/vnd.google-apps.document" &&
         file?.createdTime === file?.modifiedTime
       ) {
-        // Workaround: check if file was created recently (within 1 minute)
+        // check deduplication
+        const now = Date.now();
+        const lastSeen = recentlyProcessed.get(fileId);
+
+        if (lastSeen && now - lastSeen < 2 * 60 * 1000) {
+          console.log("⏩ Duplicate webhook for file, skipping:", file.name);
+          continue;
+        }
+
+        // Fetch metadata to confirm it's recent
         const fileMeta = await axios.get(
           `https://www.googleapis.com/drive/v3/files/${file.id}`,
           {
@@ -136,16 +149,14 @@ router.post("/webhook", async (req, res) => {
         );
 
         const createdAt = new Date(fileMeta.data.createdTime);
-        const now = new Date();
-
-        const timeDiffMs = now.getTime() - createdAt.getTime();
-        const timeDiffMinutes = timeDiffMs / (1000 * 60);
+        const timeDiffMinutes =
+          (Date.now() - createdAt.getTime()) / (1000 * 60);
 
         if (timeDiffMinutes < 1) {
-          // ✅ File was created in the last 1 minute
           console.log("📄 NEW Google Doc created:", file.name);
 
-          // ➕ Your Zap or logic here
+          // ✅ Mark file as processed now
+          recentlyProcessed.set(fileId, now);
         } else {
           console.log("✏️ Existing doc modified, ignoring:", file.name);
         }
