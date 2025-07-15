@@ -7,6 +7,19 @@ import { getTokenForUser } from "../utils/googleTokens";
 
 const router = Router();
 
+// A simple in-memory cache to store processed file IDs (moved outside to persist across requests)
+const recentlyProcessed = new Map<string, number>();
+
+// Clean up old entries from cache every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, time] of recentlyProcessed.entries()) {
+    if (now - time > 5 * 60 * 1000) {
+      recentlyProcessed.delete(key);
+    }
+  }
+}, 5 * 60 * 1000); // Run every 5 minutes, not every minute
+
 // Route to initiate a Google Drive watch channel for detecting file changes
 // POST /api/google-drive/watch
 router.post("/watch", async (req, res): Promise<any> => {
@@ -110,85 +123,76 @@ router.post("/webhook", async (req, res) => {
         },
         params: {
           pageToken: pageToken,
-          fields: "changes(file(id,name,mimeType)),newStartPageToken",
+          fields: "changes(file(id,name,mimeType,trashed)),newStartPageToken",
         },
       }
     );
-
-    // A simple in-memory cache to store processed file IDs for 2 minutes
-    const recentlyProcessed = new Map<string, number>();
 
     for (const change of data.changes) {
       const file = change.file;
       const fileId = file?.id;
 
+      // Skip if not a Google Doc or if the file is trashed/deleted
       if (
-        file?.mimeType === "application/vnd.google-apps.document" &&
-        file?.createdTime === file?.modifiedTime
+        file?.mimeType !== "application/vnd.google-apps.document" ||
+        file?.trashed
       ) {
-        // check deduplication
-        const now = Date.now();
-        const lastSeen = recentlyProcessed.get(fileId);
+        continue;
+      }
 
-        if (lastSeen && now - lastSeen < 2 * 60 * 1000) {
-          console.log("⏩ Duplicate webhook for file, skipping:", file.name);
-          continue;
+      // Check if we've already processed this file recently to avoid duplicates
+      const now = Date.now();
+      const lastSeen = recentlyProcessed.get(fileId);
+      if (lastSeen && now - lastSeen < 2 * 60 * 1000) {
+        continue; // Skip this file, continue to next
+      }
+
+      // Mark this file as being processed immediately to prevent race conditions
+      recentlyProcessed.set(fileId, now);
+
+      // Get detailed file metadata
+      const fileMeta = await axios.get(
+        `https://www.googleapis.com/drive/v3/files/${file.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          params: {
+            fields: "createdTime,modifiedTime,name,mimeType,parents,trashed",
+          },
         }
+      );
 
-        // Fetch metadata to confirm it's recent
-        const fileMeta = await axios.get(
-          `https://www.googleapis.com/drive/v3/files/${file.id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-            params: {
-              fields: "createdTime,name,mimeType,parents",
-            },
-          }
-        );
+      // Skip if file is trashed (double check)
+      if (fileMeta.data.trashed) {
+        continue;
+      }
 
-        const TARGET_FOLDER_ID = "1sw0iaU8ZanFoBs51Ar9GJTiCILTb6adw"; // replace with your folder ID
+      const TARGET_FOLDER_ID = "1sw0iaU8ZanFoBs51Ar9GJTiCILTb6adw"; // replace with your folder ID
 
-        if (
-          fileMeta.data.parents &&
-          fileMeta.data.parents.includes(TARGET_FOLDER_ID)
-        ) {
-          const createdAt = new Date(fileMeta.data.createdTime);
-          const timeDiffMinutes =
-            (Date.now() - createdAt.getTime()) / (1000 * 60);
+      const createdAt = new Date(fileMeta.data.createdTime);
+      const timeDiffMinutes = (now - createdAt.getTime()) / (1000 * 60);
+      const isNewlyCreated = timeDiffMinutes < 1;
 
-          if (timeDiffMinutes < 1) {
-            console.log(
-              "📄 NEW Google Doc created in target folder:",
-              fileMeta.data.name
-            );
+      const isInTargetFolder =
+        fileMeta.data.parents &&
+        fileMeta.data.parents.includes(TARGET_FOLDER_ID);
 
-            // ✅ Mark file as processed now
-            recentlyProcessed.set(fileId, now);
-          } else {
-            console.log(
-              "✏️ Existing doc modified in folder, ignoring:",
-              fileMeta.data.name
-            );
-          }
+      // Only log for newly created files (not modified or deleted)
+      if (isNewlyCreated) {
+        if (isInTargetFolder) {
+          console.log(
+            "📄 NEW Google Doc created in target folder:",
+            fileMeta.data.name
+          );
         } else {
           console.log(
-            "📁 Doc created but not in target folder:",
+            "📁 NEW doc created but not in target folder:",
             fileMeta.data.name
           );
         }
       }
     }
-
-    setInterval(() => {
-      const now = Date.now();
-      for (const [key, time] of recentlyProcessed.entries()) {
-        if (now - time > 5 * 60 * 1000) {
-          recentlyProcessed.delete(key);
-        }
-      }
-    }, 60 * 1000);
 
     // Update the stored startPageToken to continue tracking future changes
     await prismaClient.google_drive_watch.update({
