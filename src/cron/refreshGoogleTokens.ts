@@ -6,10 +6,11 @@ import qs from "querystring";
 dotenv.config();
 
 export async function refreshGoogleTokens() {
+  const istOffset = 5.5 * 60 * 60 * 1000;
   const users = await prismaClient.google_tokens.findMany({
     where: {
       expiresAt: {
-        lt: new Date(Date.now() + 59 * 60 * 1000), // expires in next 5 mins
+        lt: new Date(Date.now() + 5 * 60 * 1000 + istOffset), // expires in next 5 mins
       },
     },
   });
