@@ -72,8 +72,9 @@ app.get("/", (req, res) => {
 });
 
 setInterval(() => {
+  console.log("⏳ Running refreshGoogleTokens cron job");
   refreshGoogleTokens();
-}, 30 * 60 * 1000); // 30 mins
+}, 1 * 60 * 1000);
 
 const PORT = 8000;
 

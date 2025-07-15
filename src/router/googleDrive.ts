@@ -143,25 +143,41 @@ router.post("/webhook", async (req, res) => {
               Authorization: `Bearer ${accessToken}`,
             },
             params: {
-              fields: "createdTime,name,mimeType",
+              fields: "createdTime,name,mimeType,parents",
             },
           }
         );
 
-        const createdAt = new Date(fileMeta.data.createdTime);
-        const timeDiffMinutes =
-          (Date.now() - createdAt.getTime()) / (1000 * 60);
+        const TARGET_FOLDER_ID = "1sw0iaU8ZanFoBs51Ar9GJTiCILTb6adw"; // replace with your folder ID
 
-        if (timeDiffMinutes < 1) {
-          console.log("📄 NEW Google Doc created:", file.name);
+        if (
+          fileMeta.data.parents &&
+          fileMeta.data.parents.includes(TARGET_FOLDER_ID)
+        ) {
+          const createdAt = new Date(fileMeta.data.createdTime);
+          const timeDiffMinutes =
+            (Date.now() - createdAt.getTime()) / (1000 * 60);
 
-          // ✅ Mark file as processed now
-          recentlyProcessed.set(fileId, now);
+          if (timeDiffMinutes < 1) {
+            console.log(
+              "📄 NEW Google Doc created in target folder:",
+              fileMeta.data.name
+            );
+
+            // ✅ Mark file as processed now
+            recentlyProcessed.set(fileId, now);
+          } else {
+            console.log(
+              "✏️ Existing doc modified in folder, ignoring:",
+              fileMeta.data.name
+            );
+          }
         } else {
-          console.log("✏️ Existing doc modified, ignoring:", file.name);
+          console.log(
+            "📁 Doc created but not in target folder:",
+            fileMeta.data.name
+          );
         }
-      } else {
-        console.log("⏩ Ignoring file (not a doc):", file.name, file.mimeType);
       }
     }
 

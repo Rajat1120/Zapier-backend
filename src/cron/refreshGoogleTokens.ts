@@ -9,10 +9,12 @@ export async function refreshGoogleTokens() {
   const users = await prismaClient.google_tokens.findMany({
     where: {
       expiresAt: {
-        lt: new Date(Date.now() + 5 * 60 * 1000), // expires in next 5 mins
+        lt: new Date(Date.now() + 59 * 60 * 1000), // expires in next 5 mins
       },
     },
   });
+
+  console.log("🔍 Tokens expiring soon:", users.length);
 
   for (const user of users) {
     if (!user.refresh_token) continue;
