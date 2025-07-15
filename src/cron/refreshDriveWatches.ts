@@ -59,15 +59,20 @@ export async function refreshDriveWatches() {
 
       const { expiration, resourceId } = watchRes.data;
 
-      // Step 5: Update DB with new watch info
-      await prismaClient.google_drive_watch.update({
-        where: { id: watch.id },
+      // Step 5: Delete existing watch rows for this zap to avoid duplicates
+      await prismaClient.google_drive_watch.deleteMany({
+        where: { zapId },
+      });
+
+      // Step 6: Insert fresh watch entry
+      await prismaClient.google_drive_watch.create({
         data: {
+          userId,
+          zapId,
           channelId: newChannelId,
           resourceId,
           expiration: new Date(Number(expiration)),
           startPageToken: startPageTokenRes.data.startPageToken,
-          zapId,
         },
       });
 
