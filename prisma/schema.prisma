@@ -24,6 +24,7 @@ model Zap {
   triggerId String
   userId    Int
   actions   Action[]
+  published Boolean  @default(false)
   trigger   Trigger?
   user      User     @relation(fields: [userId], references: [id])
   zapRuns   ZapRun[]
