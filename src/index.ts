@@ -1,6 +1,7 @@
 import googleDriveRouter from "./router/googleDrive";
 import express from "express";
 import cors from "cors";
+import cron from "node-cron";
 import { PrismaClient } from "@prisma/client";
 import { userRouter } from "./router/user";
 import { zapRouter } from "./router/zap";
@@ -10,6 +11,7 @@ import { Producer } from "./processor/process";
 import { Consumer } from "./worker/worker";
 import { googleTokenRouter } from "./router/googleTokenRouter";
 import { refreshGoogleTokens } from "./cron/refreshGoogleTokens";
+import { refreshDriveWatches } from "./cron/refreshDriveWatches";
 
 const client = new PrismaClient();
 
@@ -74,6 +76,12 @@ app.get("/", (req, res) => {
 setInterval(() => {
   refreshGoogleTokens();
 }, 30 * 60 * 1000);
+
+// Runs every 20 minutes
+cron.schedule("*/20 * * * *", async () => {
+  console.log("⏰ Checking expiring Google Drive watches...");
+  await refreshDriveWatches();
+});
 
 const PORT = 8000;
 

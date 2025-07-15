@@ -23,7 +23,7 @@ setInterval(() => {
 // Route to initiate a Google Drive watch channel for detecting file changes
 // POST /api/google-drive/watch
 router.post("/watch", async (req, res): Promise<any> => {
-  const { userId } = req.body;
+  const { userId, zapId } = req.body;
 
   try {
     // Fetch the user's access token from the database
@@ -78,6 +78,7 @@ router.post("/watch", async (req, res): Promise<any> => {
         resourceId,
         expiration: new Date(Number(expiration)),
         startPageToken: startPageToken.data.startPageToken,
+        zapId,
       },
     });
 

@@ -28,6 +28,7 @@ model Zap {
   trigger   Trigger?
   user      User     @relation(fields: [userId], references: [id])
   zapRuns   ZapRun[]
+  googleDriveWatch    google_drive_watch?
   @@index([userId])
 
  
@@ -111,7 +112,9 @@ model google_drive_watch {
   resourceId String
   startPageToken  String 
   expiration DateTime
+  zapId       String   @unique
+  
+  zap        Zap @relation(fields: [zapId], references: [id])
 
   user       User     @relation(fields: [userId], references: [id])
 }
-
