@@ -66,6 +66,16 @@ router.post("/signin", async (req, res): Promise<any> => {
     JWT_PASSWORD
   );
 
+  // ✅ update user record with jwtToken
+  await prismaClient.user.update({
+    where: {
+      id: user.id,
+    },
+    data: {
+      jwtToken: token,
+    },
+  });
+
   res.json({
     token: token,
     email: user.email,
