@@ -1,9 +1,11 @@
 // Google Drive integration routes: Watch for file changes and handle webhook notifications
-import { Router } from "express";
+import { Router, Request, Response } from "express";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import { prismaClient } from "../db/database";
 import { getTokenForUser } from "../utils/googleTokens";
+import { authMiddleware } from "../middleware";
+import { fetchDriveFolders } from "../lib/google/drive";
 
 const router = Router();
 
@@ -209,5 +211,31 @@ router.post("/webhook", async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
+router.get(
+  "/google/folders",
+  authMiddleware,
+  async (req: Request, res: Response): Promise<void> => {
+    // @ts-ignore
+    const userId = req.id;
+
+    try {
+      const googleToken = await prismaClient.google_tokens.findFirst({
+        where: { userId },
+      });
+
+      if (!googleToken?.access_token) {
+        res.status(404).json({ error: "Google access token not found" });
+        return;
+      }
+
+      const folders = await fetchDriveFolders(googleToken.access_token);
+      res.json({ folders });
+    } catch (error: any) {
+      console.error("Folder fetch error:", error);
+      res.status(500).json({ error: error.message || "Server error" });
+    }
+  }
+);
 
 export default router;
