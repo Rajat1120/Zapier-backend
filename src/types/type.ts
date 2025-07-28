@@ -20,6 +20,7 @@ export const ZapCreateSchema = z.object({
       actionMetadata: z.any().optional(),
       index: z.number(),
       sortingOrder: z.string(),
+      actionEvent: z.string().optional().nullable(), // Optional field for action event
     })
   ),
 });
@@ -32,6 +33,7 @@ export const ZapUpdateSchema = z.object({
       metadata: z.any().optional(),
       index: z.number(),
       sortingOrder: z.number(),
+      actionEvent: z.string().optional().nullable(), // Optional field for action event
     })
   ),
 });
