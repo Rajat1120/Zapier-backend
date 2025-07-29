@@ -8,18 +8,13 @@ export async function refreshDriveWatches() {
 
   // Step 1: Calculate time 20 min from now
   // 20 minutes in milliseconds
-  const bufferInMs = 20 * 60 * 1000;
-
-  // Offset IST: +5 hours 30 minutes = 330 minutes = 19800000 ms
   const istOffset = 5.5 * 60 * 60 * 1000;
-
+  const bufferInMs = 20 * 60 * 1000; // 20 mins
   const bufferExpiry = new Date(Date.now() + bufferInMs + istOffset);
-
-  // Step 2: Find watches expiring in next 20 min AND zap is published
   const expiringWatches = await prismaClient.google_drive_watch.findMany({
     where: {
       expiration: { lt: bufferExpiry },
-      zap: { published: true }, // assumes zap relation
+      zap: { published: true },
     },
     include: { zap: true },
   });

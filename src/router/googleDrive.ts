@@ -71,6 +71,10 @@ router.post("/watch", async (req, res): Promise<any> => {
       }
     );
     const { expiration, resourceId } = response.data;
+    const utcDate = new Date(Number(expiration));
+
+    // Add IST offset (UTC+5:30 => 330 minutes = 19800000 ms)
+    const istDate = new Date(utcDate.getTime() + 5.5 * 60 * 60 * 1000);
 
     // Store the new watch details in the database
     await prismaClient.google_drive_watch.create({
@@ -78,7 +82,7 @@ router.post("/watch", async (req, res): Promise<any> => {
         userId,
         channelId,
         resourceId,
-        expiration: new Date(Number(expiration)),
+        expiration: istDate,
         startPageToken: startPageToken.data.startPageToken,
         zapId,
       },
@@ -171,7 +175,27 @@ router.post("/webhook", async (req, res) => {
         continue;
       }
 
-      const TARGET_FOLDER_ID = "1sw0iaU8ZanFoBs51Ar9GJTiCILTb6adw"; // replace with your folder ID
+      // Dynamically fetch target folder ID from Trigger table if condition matches
+      const trigger = await prismaClient.trigger.findUnique({
+        where: { zapId: watch.zapId },
+        select: {
+          triggerId: true,
+          triggerEvent: true,
+          metadata: true,
+        },
+      });
+
+      let TARGET_FOLDER_ID = "";
+
+      if (
+        trigger?.triggerId === "docs" &&
+        trigger?.triggerEvent === "New Document in folder" &&
+        trigger.metadata &&
+        typeof trigger.metadata === "object" &&
+        "folderId" in trigger.metadata
+      ) {
+        TARGET_FOLDER_ID = trigger.metadata.folderId as string;
+      }
 
       const createdAt = new Date(fileMeta.data.createdTime);
       const timeDiffMinutes = (now - createdAt.getTime()) / (1000 * 60);

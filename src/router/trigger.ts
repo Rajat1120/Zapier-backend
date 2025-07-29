@@ -12,7 +12,7 @@ router.get("/available", async (req, res) => {
 
 router.post("/:zapId", async (req: any, res: any) => {
   const { zapId } = req.params;
-  const { triggerEvent } = req.body;
+  const { triggerEvent, metadata } = req.body;
 
   if (!triggerEvent || typeof triggerEvent !== "string") {
     return res.status(400).json({ message: "Invalid triggerEvent" });
@@ -21,7 +21,12 @@ router.post("/:zapId", async (req: any, res: any) => {
   try {
     const updated = await prismaClient.trigger.update({
       where: { zapId },
-      data: { triggerEvent },
+      data: { triggerEvent, metadata },
+    });
+
+    await prismaClient.action.updateMany({
+      where: { zapId, index: 0 },
+      data: { metadata },
     });
 
     return res.status(200).json({

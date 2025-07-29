@@ -70,7 +70,7 @@ router.get("/", authMiddleware, async (req, res): Promise<any> => {
 
     const existing = await prismaClient.google_tokens.findUnique({
       where: { userId },
-      select: { scopes: true, email: true },
+      select: { scopes: true, email: true, expiresAt: true },
     });
 
     if (!existing) {
@@ -81,7 +81,11 @@ router.get("/", authMiddleware, async (req, res): Promise<any> => {
 
     return res
       .status(200)
-      .json({ scopes: existing.scopes, email: existing.email });
+      .json({
+        scopes: existing.scopes,
+        email: existing.email,
+        expiresAt: existing.expiresAt,
+      });
   } catch (error) {
     console.error("Error fetching scopes:", error);
     return res.status(500).json({ message: "Internal server error" });
