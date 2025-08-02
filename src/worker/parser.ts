@@ -1,43 +1,66 @@
 export function parse(
-  text: string,
-  values: any,
+  text: string = "",
+  values: any = {},
   startDelimeter = "{",
   endDelimeter = "}"
 ) {
-  // You received {comment.amount} momey from {comment.link}
+  if (typeof text !== "string") return "";
+
   let startIndex = 0;
   let endIndex = 1;
-
   let finalString = "";
+
   while (endIndex < text.length) {
     if (text[startIndex] === startDelimeter) {
-      let endPoint = startIndex + 2;
-      while (text[endPoint] !== endDelimeter) {
+      let endPoint = startIndex + 1;
+
+      // Safely find end delimiter
+      while (text[endPoint] !== endDelimeter && endPoint < text.length) {
         endPoint++;
       }
-      //
-      let stringHoldingValue = text.slice(startIndex + 1, endPoint);
-      const keys = stringHoldingValue.split(".");
-      let localValues = {
-        ...values,
-      };
-      for (let i = 0; i < keys.length; i++) {
-        if (typeof localValues === "string") {
-          localValues = JSON.parse(localValues);
-        }
-        localValues = localValues[keys[i]];
+
+      // If we reach the end without finding the end delimiter, treat it as normal text
+      if (text[endPoint] !== endDelimeter) {
+        finalString += text[startIndex];
+        startIndex++;
+        endIndex++;
+        continue;
       }
-      finalString += localValues;
+
+      const placeholder = text.slice(startIndex + 1, endPoint).trim(); // e.g. comment.amount
+      const keys = placeholder.split(".");
+
+      let localValues =
+        typeof values === "string" ? JSON.parse(values) : { ...values };
+      let resolvedValue: any = localValues;
+
+      for (const key of keys) {
+        if (
+          resolvedValue &&
+          typeof resolvedValue === "object" &&
+          key in resolvedValue
+        ) {
+          resolvedValue = resolvedValue[key];
+        } else {
+          resolvedValue = ""; // fallback if key doesn't exist
+          break;
+        }
+      }
+
+      finalString += resolvedValue;
       startIndex = endPoint + 1;
-      endIndex = endPoint + 2;
+      endIndex = startIndex + 1;
     } else {
       finalString += text[startIndex];
       startIndex++;
       endIndex++;
     }
   }
+
+  // Add any leftover character
   if (text[startIndex]) {
     finalString += text[startIndex];
   }
+
   return finalString;
 }

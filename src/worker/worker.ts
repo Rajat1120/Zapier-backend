@@ -1,131 +1,142 @@
-import { json } from "express";
-import { Kafka } from "kafkajs";
+import Redis from "ioredis";
 import { prismaClient } from "../db/database";
 import { parse } from "./parser";
 import { sendEmail } from "./email";
-import { JsonObject } from "@prisma/client/runtime/library";
 
-const broker = process.env.KAFKA_BROKER || "";
+if (!process.env.REDIS_URL)
+  throw new Error("REDIS_URL environment variable is not defined");
+const redis = new Redis(process.env.REDIS_URL);
+const STREAM_NAME = "zap-events";
+const GROUP_NAME = "zap-group";
+const CONSUMER_NAME = "zap-worker";
 
-const kafka = new Kafka({
-  clientId: "outbox-processor",
-  brokers: [broker],
-  ssl: true,
-  sasl: {
-    mechanism: "plain",
-    username: process.env.KAFKA_USERNAME || "",
-    password: process.env.KAFKA_PASSWORD || "",
-  },
-});
-const TOPIC_NAME = "zap-events";
+async function setupStream() {
+  try {
+    await redis.xgroup("CREATE", STREAM_NAME, GROUP_NAME, "$", "MKSTREAM");
+  } catch (err: any) {
+    if (!err.message.includes("BUSYGROUP")) {
+      console.error("Failed to create group:", err);
+    }
+  }
+}
 
 export async function Consumer() {
-  const consumer = kafka.consumer({ groupId: "main-worker" });
-  await consumer.connect();
-  const producer = kafka.producer();
-  await producer.connect();
-  
+  console.log("👟 Consumer started");
+  await setupStream();
+  console.log("🔌 Connected to Redis stream and group setup done");
 
-  await consumer.subscribe({ topic: TOPIC_NAME, fromBeginning: true });
+  while (true) {
+    console.log("⏳ Waiting for messages...");
+    const result = (await redis.xreadgroup(
+      "GROUP",
+      GROUP_NAME,
+      CONSUMER_NAME,
+      "COUNT",
+      1,
+      "BLOCK",
+      10000,
+      "STREAMS",
+      STREAM_NAME,
+      ">"
+    )) as [string, [string, string[]][]][];
+    console.log("📦 Received message:", result);
 
-  await consumer.run({
-    eachMessage: async ({ topic, partition, message }) => {
-      const offset = message.offset ? message.offset.toString() : "undefined";
-      console.log({
-        topic,
-        partition,
-        offset,
-        value: message.value?.toString(),
-      });
+    if (!result) continue;
 
-      if (!message.value?.toString()) {
-        return;
-      }
-      const parsedValue = JSON.parse(message.value.toString());
-      const zapRunId = parsedValue.zapRunId;
-      const stage = parsedValue.stage;
+    for (const [, streamMessages] of result) {
+      for (const [id, fields] of streamMessages) {
+        if (!Array.isArray(fields)) {
+          console.warn("⚠️ Unexpected Redis message format:", fields);
+          continue;
+        }
 
-      const zapRunDetails = await prismaClient.zapRun.findFirst({
-        where: {
-          id: zapRunId,
-        },
-        include: {
-          zap: {
-            include: {
-              actions: {
-                include: {
-                  type: true,
+        const fieldIndex = fields.findIndex((val) => val === "data");
+        if (fieldIndex === -1 || !fields[fieldIndex + 1]) {
+          console.warn("⚠️ No 'data' field found in Redis message:", fields);
+          continue;
+        }
+
+        const payload = JSON.parse(fields[fieldIndex + 1]);
+        const { zapRunId, stage } = payload;
+
+        const zapRunDetails = await prismaClient.zapRun.findFirst({
+          where: { id: zapRunId },
+          include: {
+            zap: {
+              include: {
+                actions: {
+                  include: { type: true },
                 },
               },
             },
           },
-        },
-      });
-      const currentAction = zapRunDetails?.zap.actions.find(
-        (x: any) => x.sortingOrder === stage
-      );
-
-      if (!currentAction) {
-        console.log("Current action not found?");
-        return;
-      }
-
-      const zapRunMetadata = zapRunDetails?.metadata;
-
-      if (currentAction.type && currentAction.type.id === "email") {
-        console.log("Sending email");
-
-        const body = parse(
-          (currentAction.metadata as JsonObject)?.body as string,
-          zapRunMetadata
-        );
-        const to = parse(
-          (currentAction.metadata as JsonObject)?.email as string,
-          zapRunMetadata
-        );
-        console.log(`Sending out email to ${to} body is ${body}`);
-        await sendEmail(to, body);
-      }
-
-      if (currentAction.type && currentAction.type.id === "solana_send") {
-        console.log("Sending SOL");
-        const amount = parse(
-          (currentAction.metadata as JsonObject)?.amount as string,
-          zapRunMetadata
-        );
-        const address = parse(
-          (currentAction.metadata as JsonObject)?.address as string,
-          zapRunMetadata
-        );
-        console.log(`Sending out SOL of ${amount} to address ${address}`);
-        // await sendSol(address, amount);
-      }
-
-      const lastStage = (zapRunDetails?.zap.actions?.length || 1) - 1; // 1
-      console.log(lastStage);
-      console.log(stage);
-      if (lastStage !== stage) {
-        console.log("pushing back to the queue");
-        await producer.send({
-          topic: TOPIC_NAME,
-          messages: [
-            {
-              value: JSON.stringify({
-                stage: stage + 1,
-                zapRunId,
-              }),
-            },
-          ],
         });
+
+        console.log("👀 Received Redis Payload:", payload);
+        console.log("📥 zapRunId:", zapRunId);
+        console.log("📥 stage:", stage);
+
+        console.log(
+          "🧠 zapRunDetails:",
+          JSON.stringify(zapRunDetails, null, 2)
+        );
+        console.log("🧠 Actions:", zapRunDetails?.zap.actions);
+
+        console.log("🔍 Looking for action with index =", stage);
+        const currentAction = zapRunDetails?.zap.actions.find(
+          (x) => x.index === stage
+        );
+        if (!currentAction) continue;
+
+        const zapRunMetadata = zapRunDetails?.metadata;
+
+        if (currentAction.type?.id === "email") {
+          console.log("📧 About to send email");
+
+          const metadata = currentAction.metadata as {
+            body: string;
+            email: string;
+          };
+
+          console.log("📨 Email metadata:", metadata);
+
+          const body = parse(metadata.body, zapRunMetadata);
+          const to = parse(metadata.email, zapRunMetadata);
+
+          console.log("📨 Parsed email body:", body);
+          console.log("📨 Parsed email to:", to);
+
+          try {
+            await sendEmail(to, body);
+            console.log("✅ Email sent successfully");
+          } catch (error) {
+            console.error("❌ Failed to send email:", error);
+          }
+        }
+
+        if (currentAction.type?.id === "solana_send") {
+          const metadata = currentAction.metadata as {
+            amount: string;
+            address: string;
+          };
+          const amount = parse(metadata.amount, zapRunMetadata);
+          const address = parse(metadata.address, zapRunMetadata);
+          console.log(`Send SOL: ${amount} to ${address}`);
+          // await sendSol(address, amount);
+        }
+
+        const lastStage = (zapRunDetails?.zap.actions.length || 1) - 1;
+        if (lastStage !== stage) {
+          await redis.xadd(
+            STREAM_NAME,
+            "*",
+            "data",
+            JSON.stringify({ zapRunId, stage: stage + 1 })
+          );
+        }
+
+        await redis.xack(STREAM_NAME, GROUP_NAME, id);
       }
-
-      console.log("processing done");
-
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1 second
-      console.log(`Committing offset: ${offset} for partition: ${partition}`);
-      await consumer.commitOffsets([
-        { topic, partition, offset: message.offset },
-      ]);
-    },
-  });
+    }
+  }
 }
