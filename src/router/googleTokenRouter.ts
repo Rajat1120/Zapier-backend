@@ -92,4 +92,20 @@ router.get("/", authMiddleware, async (req, res): Promise<any> => {
   }
 });
 
+router.get("/accessToken", authMiddleware, async (req, res): Promise<any> => {
+  // @ts-ignore – assuming req.id is added by authMiddleware
+  const userId = parseInt(req.id);
+
+  const existing = await prismaClient.google_tokens.findUnique({
+    where: { userId },
+    select: { access_token: true },
+  });
+
+  if (!existing) {
+    return res.status(404).json({ message: "No token found for user" });
+  }
+
+  return res.status(200).json({ access_token: existing.access_token });
+});
+
 export const googleTokenRouter = router;

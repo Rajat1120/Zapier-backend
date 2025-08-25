@@ -41,7 +41,7 @@ router.post("/:zapId", async (req: any, res: any) => {
 
 router.post("/metadata/:zapId", async (req: any, res: any) => {
   const { zapId } = req.params;
-  const { metadata } = req.body;
+  const { metadata , index} = req.body;
 
   if (!metadata || typeof metadata !== "object") {
     return res.status(400).json({ message: "Invalid metadata" });
@@ -58,7 +58,7 @@ router.post("/metadata/:zapId", async (req: any, res: any) => {
     await prismaClient.action.updateMany({
       where: {
         zapId,
-        index: 0,
+        index
       },
       data: {
         metadata,
