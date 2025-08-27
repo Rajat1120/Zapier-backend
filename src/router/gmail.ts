@@ -1,11 +1,13 @@
 import { Router } from "express";
+import type { RequestHandler } from "express";
+import type { Prisma } from "@prisma/client";
 import axios from "axios";
 import { prismaClient } from "../db/database";
 
 const router = Router();
 
 // Lists Gmail messages with attachments for the trigger's label, and enqueues new ZapRuns
-router.get("/new-attachments/:zapId", async (req, res) => {
+const newAttachmentsHandler: RequestHandler<{ zapId: string }> = async (req, res) => {
   const { zapId } = req.params as { zapId: string };
 
   try {
@@ -15,12 +17,14 @@ router.get("/new-attachments/:zapId", async (req, res) => {
     });
 
     if (!trigger) {
-      return res.status(404).json({ message: "Trigger not found" });
+      res.status(404).json({ message: "Trigger not found" });
+      return;
     }
 
     const labelId = (trigger.metadata as any)?.labelId as string | undefined;
     if (!labelId) {
-      return res.status(400).json({ message: "Missing labelId in trigger metadata" });
+      res.status(400).json({ message: "Missing labelId in trigger metadata" });
+      return;
     }
 
     const userId = trigger.zap.userId;
@@ -30,7 +34,8 @@ router.get("/new-attachments/:zapId", async (req, res) => {
     });
 
     if (!tokenRow?.access_token) {
-      return res.status(404).json({ message: "No Google access token" });
+      res.status(404).json({ message: "No Google access token" });
+      return;
     }
 
     const accessToken = tokenRow.access_token;
@@ -47,7 +52,9 @@ router.get("/new-attachments/:zapId", async (req, res) => {
 
     const created: string[] = [];
 
-    for (const msg of messages) {
+    console.log(messages);
+
+   /*  for (const msg of messages) {
       // Dedup by checking existing ZapRun with this gmailMessageId in metadata
       const existing = await prismaClient.zapRun.findFirst({
         where: {
@@ -62,7 +69,7 @@ router.get("/new-attachments/:zapId", async (req, res) => {
 
       if (existing) continue;
 
-      await prismaClient.$transaction(async (tx) => {
+      await prismaClient.$transaction(async (tx: Prisma.TransactionClient) => {
         const run = await tx.zapRun.create({
           data: {
             zapId,
@@ -78,14 +85,18 @@ router.get("/new-attachments/:zapId", async (req, res) => {
         await tx.zapRunOutbox.create({ data: { zapRunId: run.id } });
         created.push(msg.id);
       });
-    }
+    } */
 
-    return res.status(200).json({ createdCount: created.length, created });
+    res.status(200).json({ createdCount: created.length, created });
+    return;
   } catch (err) {
     console.error("Gmail new-attachments error", err);
-    return res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: "Internal server error" });
+    return;
   }
-});
+};
+
+router.get("/new-attachments/:zapId", newAttachmentsHandler);
 
 export default router;
 
