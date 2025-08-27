@@ -12,6 +12,7 @@ import { Consumer } from "./worker/worker";
 import { googleTokenRouter } from "./router/googleTokenRouter";
 import { refreshGoogleTokens } from "./cron/refreshGoogleTokens";
 import { refreshDriveWatches } from "./cron/refreshDriveWatches";
+import gmailRouter from "./router/gmail";
 
 const client = new PrismaClient();
 
@@ -68,6 +69,7 @@ app.use("/api/v1/trigger", triggerRouter);
 app.use("/api/v1/action", actionRouter);
 app.use("/api/google-token", googleTokenRouter);
 app.use("/api/google-drive", googleDriveRouter);
+app.use("/api/gmail", gmailRouter);
 
 app.get("/", (req, res) => {
   res.status(200).send("🚀 Zapier backend is live");
