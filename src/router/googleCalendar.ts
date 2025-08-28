@@ -72,6 +72,8 @@ const pollCalendarHandler: RequestHandler<{ zapId: string }> = async (req, res) 
         
       if (existing) continue;
 
+      console.log("[Calendar] Detected new event", { zapId, calendarId, eventId: ev.id, summary: ev.summary });
+
       await prismaClient.$transaction(async (tx: Prisma.TransactionClient) => {
         const run = await tx.zapRun.create({
           data: {

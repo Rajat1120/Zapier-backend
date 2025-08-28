@@ -66,6 +66,7 @@ const pollSlidesHandler: RequestHandler<{ zapId: string }> = async (req, res) =>
       });
       if (existing) continue;
       console.log("creating new zap run for", f.id);
+      console.log("[Slides] Detected new presentation", { zapId, presentationId: f.id, name: f.name });
       await prismaClient.$transaction(async (tx: Prisma.TransactionClient) => {
         const run = await tx.zapRun.create({
           data: {

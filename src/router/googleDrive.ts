@@ -233,6 +233,14 @@ router.post("/webhook", async (req, res) => {
       });
       if (existingRun) continue;
 
+      console.log("[Drive] Detected", type, {
+        zapId: watch.zapId,
+        fileId: file.id,
+        name: fileMeta.data.name,
+        parents,
+        targetFolderId,
+      });
+
       await prismaClient.$transaction(async (tx) => {
         const run = await tx.zapRun.create({
           data: {
