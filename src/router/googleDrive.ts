@@ -130,7 +130,7 @@ router.post("/webhook", async (req, res) => {
         },
         params: {
           pageToken: pageToken,
-          fields: "changes(file(id,name,mimeType,trashed)),newStartPageToken",
+          fields: "changes(file(id,name,mimeType,trashed,parents)),newStartPageToken",
         },
       }
     );
@@ -139,13 +139,8 @@ router.post("/webhook", async (req, res) => {
       const file = change.file;
       const fileId = file?.id;
 
-      // Skip if not a Google Doc or if the file is trashed/deleted
-      if (
-        file?.mimeType !== "application/vnd.google-apps.document" ||
-        file?.trashed
-      ) {
-        continue;
-      }
+      // Skip if deleted/trashed
+      if (file?.trashed) continue;
 
       // Check if we've already processed this file recently to avoid duplicates
       const now = Date.now();
@@ -175,50 +170,86 @@ router.post("/webhook", async (req, res) => {
         continue;
       }
 
-      // Dynamically fetch target folder ID from Trigger table if condition matches
+      // Load trigger for this watch
       const trigger = await prismaClient.trigger.findUnique({
         where: { zapId: watch.zapId },
         select: {
-          triggerId: true,
           triggerEvent: true,
           metadata: true,
+          type: { select: { name: true } },
         },
       });
 
-      let TARGET_FOLDER_ID = "";
-
-      if (
-        trigger?.triggerId === "docs" &&
-        trigger?.triggerEvent === "New Document in folder" &&
-        trigger.metadata &&
-        typeof trigger.metadata === "object" &&
-        "folderId" in trigger.metadata
-      ) {
-        TARGET_FOLDER_ID = trigger.metadata.folderId as string;
+      if (!trigger || trigger.type?.name !== "Google drive") {
+        continue;
       }
+
+      const meta = (trigger.metadata as any) ?? {};
+      const targetFolderId = typeof meta.folderId === "string" ? meta.folderId : "";
 
       const createdAt = new Date(fileMeta.data.createdTime);
       const timeDiffMinutes = (now - createdAt.getTime()) / (1000 * 60);
       const isNewlyCreated = timeDiffMinutes < 1;
+      const modifiedAt = new Date(fileMeta.data.modifiedTime);
+      const isUpdated = !isNewlyCreated && now - modifiedAt.getTime() < 60 * 1000;
 
-      const isInTargetFolder =
-        fileMeta.data.parents &&
-        fileMeta.data.parents.includes(TARGET_FOLDER_ID);
+      const parents: string[] = Array.isArray(fileMeta.data.parents) ? fileMeta.data.parents : [];
+      const isInTargetFolder = targetFolderId ? parents.includes(targetFolderId) : false;
 
-      // Only log for newly created files (not modified or deleted)
-      if (isNewlyCreated) {
-        if (isInTargetFolder) {
-          console.log(
-            "📄 NEW Google Doc created in target folder:",
-            fileMeta.data.name
-          );
-        } else {
-          console.log(
-            "📁 NEW doc created but not in target folder:",
-            fileMeta.data.name
-          );
-        }
+      // Evaluate against trigger events
+      const ev = (trigger.triggerEvent || "").toLowerCase();
+
+      const shouldCreateForNewFile = ev.includes("new file") && isNewlyCreated;
+      const shouldCreateForNewFileInFolder =
+        ev.includes("new file in folder") && isNewlyCreated && isInTargetFolder;
+      const shouldCreateForNewFolder =
+        ev.includes("new folder") && isNewlyCreated && fileMeta.data.mimeType === "application/vnd.google-apps.folder";
+      const shouldCreateForUpdatedFile = ev.includes("updated file") && isUpdated && (!targetFolderId || isInTargetFolder);
+
+      const shouldCreate =
+        shouldCreateForNewFile ||
+        shouldCreateForNewFileInFolder ||
+        shouldCreateForNewFolder ||
+        shouldCreateForUpdatedFile;
+
+      if (!shouldCreate) {
+        continue;
       }
+
+      // Prevent duplicates by checking existing ZapRuns for this file id and event type
+      const type = shouldCreateForNewFolder
+        ? "new_folder"
+        : shouldCreateForNewFileInFolder
+        ? "new_file_in_folder"
+        : shouldCreateForUpdatedFile
+        ? "updated_file"
+        : "new_file";
+
+      const existingRun = await prismaClient.zapRun.findFirst({
+        where: {
+          zapId: watch.zapId,
+          metadata: { path: ["driveFileId"], equals: file.id } as any,
+        },
+      });
+      if (existingRun) continue;
+
+      await prismaClient.$transaction(async (tx) => {
+        const run = await tx.zapRun.create({
+          data: {
+            zapId: watch.zapId,
+            metadata: {
+              source: "google_drive",
+              type,
+              driveFileId: file.id,
+              name: fileMeta.data.name,
+              mimeType: fileMeta.data.mimeType,
+              parents,
+              targetFolderId: targetFolderId || undefined,
+            },
+          },
+        });
+        await tx.zapRunOutbox.create({ data: { zapRunId: run.id } });
+      });
     }
 
     // Update the stored startPageToken to continue tracking future changes
