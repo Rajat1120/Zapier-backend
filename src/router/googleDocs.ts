@@ -38,6 +38,13 @@ async function getAccessTokenForZap(zapId: string): Promise<string | null> {
 router.post("/watch", async (req: Request, res: Response): Promise<any> => {
   const { userId, zapId } = req.body as { userId: number; zapId: string };
   console.log("[Docs] Request to start watch", { userId, zapId });
+  
+  // Validate BACKEND_URL is set
+  if (!process.env.BACKEND_URL) {
+    console.error("[Docs] BACKEND_URL environment variable not set");
+    return res.status(500).json({ message: "BACKEND_URL not configured" });
+  }
+  
   try {
     const tokenRecord = await prismaClient.google_tokens.findUnique({
       where: { userId },
@@ -63,12 +70,15 @@ router.post("/watch", async (req: Request, res: Response): Promise<any> => {
       }
     );
 
+    const webhookUrl = `${process.env.BACKEND_URL}/api/google-docs/webhook`;
+    console.log("[Docs] Setting up webhook with URL:", webhookUrl);
+    
     const response = await axios.post(
       "https://www.googleapis.com/drive/v3/changes/watch",
       {
         id: channelId,
         type: "web_hook",
-        address: `${process.env.BACKEND_URL}/api/google-docs/webhook`,
+        address: webhookUrl,
       },
       {
         headers: {
@@ -150,7 +160,7 @@ router.all("/webhook", async (req: Request, res: Response): Promise<any> => {
       {
         headers: { Authorization: `Bearer ${accessToken}` },
         params: {
-          pageToken,
+          pageToken: pageToken,
           fields:
             "changes(file(id,name,mimeType,trashed,parents,createdTime,modifiedTime)),newStartPageToken",
         },

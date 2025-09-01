@@ -16,7 +16,17 @@ export async function refreshDriveWatches() {
       expiration: { lt: bufferExpiry },
       zap: { published: true },
     },
-    include: { zap: true },
+    include: {
+      zap: {
+        include: {
+          trigger: {
+            include: {
+              type: true,
+            },
+          },
+        },
+      },
+    },
   });
 
   console.log(`📦 Watches expiring soon: ${expiringWatches.length}`);
@@ -38,14 +48,26 @@ export async function refreshDriveWatches() {
       );
 
       const newChannelId = crypto.randomUUID();
+      const triggerName = watch.zap.trigger?.type.name;
+      let webhookUrl = "";
 
+      if (triggerName === "Google docs") {
+        webhookUrl = `${process.env.BACKEND_URL}/api/google-docs/webhook`;
+      } else if (triggerName === "Google Drive") {
+        webhookUrl = `${process.env.BACKEND_URL}/api/google-drive/webhook`;
+      } else {
+        console.error(
+          `Unsupported trigger type for watch refresh: ${triggerName}`
+        );
+        continue;
+      }
       // Step 4: Start new watch
       const watchRes = await axios.post(
         "https://www.googleapis.com/drive/v3/changes/watch",
         {
           id: newChannelId,
           type: "web_hook",
-          address: `${process.env.BACKEND_URL}/api/google-drive/webhook`,
+          address: webhookUrl,
         },
         {
           headers: {
