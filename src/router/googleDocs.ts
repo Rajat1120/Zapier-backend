@@ -96,7 +96,12 @@ router.post("/watch", async (req: Request, res: Response): Promise<any> => {
       },
     });
 
-    console.log("[Docs] Watch started", { zapId, userId, channelId, resourceId });
+    console.log("[Docs] Watch started", {
+      zapId,
+      userId,
+      channelId,
+      resourceId,
+    });
     res.status(200).json({ message: "Watch started", data: response.data });
   } catch (error) {
     console.error("[Docs] Error starting Docs watch:", error);
@@ -105,7 +110,21 @@ router.post("/watch", async (req: Request, res: Response): Promise<any> => {
 });
 
 // Webhook endpoint for Docs (backed by Drive changes)
-router.post("/webhook", async (req: Request, res: Response): Promise<any> => {
+router.all("/webhook", async (req: Request, res: Response): Promise<any> => {
+  // Log all incoming webhook requests for debugging
+  console.log("[Docs] Webhook endpoint hit", {
+    method: req.method,
+    headers: req.headers,
+    body: req.body,
+    query: req.query,
+  });
+
+  // Respond to HEAD requests immediately (Google may verify endpoint)
+  if (req.method === "HEAD") {
+    res.status(200).end();
+    return;
+  }
+
   try {
     const { headers } = req;
     let channelId = headers["x-goog-channel-id"];
@@ -126,15 +145,21 @@ router.post("/webhook", async (req: Request, res: Response): Promise<any> => {
     const { access_token: accessToken } = await getTokenForUser(watch.userId);
     const pageToken = watch.startPageToken;
 
-    const { data } = await axios.get("https://www.googleapis.com/drive/v3/changes", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: {
-        pageToken,
-        fields: "changes(file(id,name,mimeType,trashed,parents,createdTime,modifiedTime)),newStartPageToken",
-      },
-    });
+    const { data } = await axios.get(
+      "https://www.googleapis.com/drive/v3/changes",
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params: {
+          pageToken,
+          fields:
+            "changes(file(id,name,mimeType,trashed,parents,createdTime,modifiedTime)),newStartPageToken",
+        },
+      }
+    );
 
-    console.log("[Docs] Changes received", { count: Array.isArray(data.changes) ? data.changes.length : 0 });
+    console.log("[Docs] Changes received", {
+      count: Array.isArray(data.changes) ? data.changes.length : 0,
+    });
 
     for (const change of data.changes || []) {
       const file = change.file;
@@ -153,18 +178,25 @@ router.post("/webhook", async (req: Request, res: Response): Promise<any> => {
       recentlyProcessed.set(fileId, now);
 
       // Fetch detailed metadata to ensure we have parents and timestamps
-      const fileMeta = await axios.get(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        params: {
-          fields: "createdTime,modifiedTime,name,mimeType,parents,trashed",
-        },
-      });
+      const fileMeta = await axios.get(
+        `https://www.googleapis.com/drive/v3/files/${file.id}`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          params: {
+            fields: "createdTime,modifiedTime,name,mimeType,parents,trashed",
+          },
+        }
+      );
 
       if (fileMeta.data.trashed) continue;
 
       const trigger = await prismaClient.trigger.findUnique({
         where: { zapId: watch.zapId },
-        select: { triggerEvent: true, metadata: true, type: { select: { name: true } } },
+        select: {
+          triggerEvent: true,
+          metadata: true,
+          type: { select: { name: true } },
+        },
       });
 
       if (!trigger || trigger.type?.name !== "Google docs") {
@@ -173,26 +205,39 @@ router.post("/webhook", async (req: Request, res: Response): Promise<any> => {
       }
 
       const meta = (trigger.metadata as any) ?? {};
-      const targetFolderId = typeof meta.folderId === "string" ? meta.folderId : "";
+      const targetFolderId =
+        typeof meta.folderId === "string" ? meta.folderId : "";
 
       const createdAt = new Date(fileMeta.data.createdTime);
       const modifiedAt = new Date(fileMeta.data.modifiedTime);
       const isNewlyCreated = now - createdAt.getTime() < 60 * 1000;
-      const isUpdated = !isNewlyCreated && now - modifiedAt.getTime() < 60 * 1000;
+      const isUpdated =
+        !isNewlyCreated && now - modifiedAt.getTime() < 60 * 1000;
 
-      const parents: string[] = Array.isArray(fileMeta.data.parents) ? fileMeta.data.parents : [];
-      const isInTargetFolder = targetFolderId ? parents.includes(targetFolderId) : false;
+      const parents: string[] = Array.isArray(fileMeta.data.parents)
+        ? fileMeta.data.parents
+        : [];
+      const isInTargetFolder = targetFolderId
+        ? parents.includes(targetFolderId)
+        : false;
 
       const ev = (trigger.triggerEvent || "").toLowerCase();
-      const isNewDocInFolderEvent = ev.includes("new document in folder") || ev.includes("new documents in folder");
+      const isNewDocInFolderEvent =
+        ev.includes("new document in folder") ||
+        ev.includes("new documents in folder");
       const isNewDocEvent = ev.includes("new document");
       const isUpdatedDocEvent = ev.includes("updated document");
 
-      const shouldCreateForNewDocInFolder = isNewDocInFolderEvent && isNewlyCreated && isInTargetFolder;
+      const shouldCreateForNewDocInFolder =
+        isNewDocInFolderEvent && isNewlyCreated && isInTargetFolder;
       const shouldCreateForNewDoc = isNewDocEvent && isNewlyCreated;
-      const shouldCreateForUpdatedDoc = isUpdatedDocEvent && isUpdated && (!targetFolderId || isInTargetFolder);
+      const shouldCreateForUpdatedDoc =
+        isUpdatedDocEvent && isUpdated && (!targetFolderId || isInTargetFolder);
 
-      const shouldCreate = shouldCreateForNewDocInFolder || shouldCreateForNewDoc || shouldCreateForUpdatedDoc;
+      const shouldCreate =
+        shouldCreateForNewDocInFolder ||
+        shouldCreateForNewDoc ||
+        shouldCreateForUpdatedDoc;
       if (!shouldCreate) continue;
 
       const type = shouldCreateForNewDocInFolder
@@ -202,7 +247,10 @@ router.post("/webhook", async (req: Request, res: Response): Promise<any> => {
         : "new_document";
 
       const existingRun = await prismaClient.zapRun.findFirst({
-        where: { zapId: watch.zapId, metadata: { path: ["docsDocumentId"], equals: file.id } as any },
+        where: {
+          zapId: watch.zapId,
+          metadata: { path: ["docsDocumentId"], equals: file.id } as any,
+        },
       });
       if (existingRun) continue;
 
@@ -253,7 +301,11 @@ const pollDocsHandler: RequestHandler<{ zapId: string }> = async (req, res) => {
   try {
     const trigger = await prismaClient.trigger.findFirst({
       where: { zapId },
-      select: { metadata: true, triggerEvent: true, type: { select: { name: true } } },
+      select: {
+        metadata: true,
+        triggerEvent: true,
+        type: { select: { name: true } },
+      },
     });
     if (!trigger || trigger.type?.name !== "Google docs") {
       res.status(400).json({ message: "Trigger is not Google Docs" });
@@ -262,14 +314,19 @@ const pollDocsHandler: RequestHandler<{ zapId: string }> = async (req, res) => {
 
     const meta = (trigger.metadata as any) ?? {};
     const folderId = typeof meta.folderId === "string" ? meta.folderId : "";
-    let lastProcessedTs: number = typeof meta.lastProcessedTs === "number" ? meta.lastProcessedTs : 0;
+    let lastProcessedTs: number =
+      typeof meta.lastProcessedTs === "number" ? meta.lastProcessedTs : 0;
 
     if (!lastProcessedTs) {
       await prismaClient.trigger.update({
         where: { zapId },
-        data: { metadata: { ...(meta || {}), lastProcessedTs: Date.now() } as any },
+        data: {
+          metadata: { ...(meta || {}), lastProcessedTs: Date.now() } as any,
+        },
       });
-      console.log("[Docs] Initialized lastProcessedTs; no backfill on first run");
+      console.log(
+        "[Docs] Initialized lastProcessedTs; no backfill on first run"
+      );
       res.status(200).json({ createdCount: 0, created: [] });
       return;
     }
@@ -283,7 +340,9 @@ const pollDocsHandler: RequestHandler<{ zapId: string }> = async (req, res) => {
     const created: string[] = [];
     const timeMinIso = new Date(lastProcessedTs - 60 * 1000).toISOString();
     const ev = (trigger.triggerEvent || "").toLowerCase();
-    const isNewDocInFolderEvent = ev.includes("new document in folder") || ev.includes("new documents in folder");
+    const isNewDocInFolderEvent =
+      ev.includes("new document in folder") ||
+      ev.includes("new documents in folder");
     const isNewDocEvent = ev.includes("new document");
     const isUpdatedDocEvent = ev.includes("updated document");
 
@@ -305,19 +364,25 @@ const pollDocsHandler: RequestHandler<{ zapId: string }> = async (req, res) => {
     }
 
     for (const q of queries) {
-      const { data } = await axios.get("https://www.googleapis.com/drive/v3/files", {
-        params: {
-          q,
-          fields: "files(id,name,mimeType,parents,createdTime,modifiedTime)",
-          pageSize: 100,
-        },
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const { data } = await axios.get(
+        "https://www.googleapis.com/drive/v3/files",
+        {
+          params: {
+            q,
+            fields: "files(id,name,mimeType,parents,createdTime,modifiedTime)",
+            pageSize: 100,
+          },
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
 
       const files = Array.isArray(data.files) ? data.files : [];
       for (const f of files) {
         const existing = await prismaClient.zapRun.findFirst({
-          where: { zapId, metadata: { path: ["docsDocumentId"], equals: f.id } as any },
+          where: {
+            zapId,
+            metadata: { path: ["docsDocumentId"], equals: f.id } as any,
+          },
         });
         if (existing) continue;
 
@@ -330,7 +395,13 @@ const pollDocsHandler: RequestHandler<{ zapId: string }> = async (req, res) => {
 
         if (isNewDocInFolderEvent && folderId && !isInTargetFolder) continue;
 
-        console.log("[Docs] Detected via poll", type, { zapId, fileId: f.id, name: f.name, parents, folderId });
+        console.log("[Docs] Detected via poll", type, {
+          zapId,
+          fileId: f.id,
+          name: f.name,
+          parents,
+          folderId,
+        });
 
         await prismaClient.$transaction(async (tx) => {
           const run = await tx.zapRun.create({
@@ -356,7 +427,9 @@ const pollDocsHandler: RequestHandler<{ zapId: string }> = async (req, res) => {
     if (created.length > 0) {
       await prismaClient.trigger.update({
         where: { zapId },
-        data: { metadata: { ...(meta || {}), lastProcessedTs: Date.now() } as any },
+        data: {
+          metadata: { ...(meta || {}), lastProcessedTs: Date.now() } as any,
+        },
       });
     }
 
@@ -396,5 +469,3 @@ router.get(
 );
 
 export default router;
-
-
