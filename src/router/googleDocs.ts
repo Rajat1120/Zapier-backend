@@ -220,26 +220,20 @@ router.all("/webhook", async (req: Request, res: Response): Promise<any> => {
         : false;
 
       const ev = (trigger.triggerEvent || "").toLowerCase();
-      const isNewDocInFolderEvent =
-        ev.includes("new document in folder") ||
-        ev.includes("new documents in folder");
-      const isNewDocEvent = ev.includes("new document");
-      const isUpdatedDocEvent = ev.includes("updated document");
-
-      // Only trigger on NEW document creation, not updates or deletions
-      const shouldCreateForNewDocInFolder =
-        isNewDocInFolderEvent && isNewlyCreated && isInTargetFolder;
-      const shouldCreateForNewDoc = isNewDocEvent && isNewlyCreated;
       
-      // Remove updated document logic since user only wants new document creation
-      const shouldCreate =
-        shouldCreateForNewDocInFolder || shouldCreateForNewDoc;
-      
-      if (!shouldCreate) continue;
-
-      const type = shouldCreateForNewDocInFolder
-        ? "new_document_in_folder"
-        : "new_document";
+      // Check trigger type first, then apply appropriate logic
+      if (ev.includes("new document in folder") || ev.includes("new documents in folder")) {
+        // Folder-specific trigger: only trigger if new doc is in specified folder
+        if (!isNewlyCreated || !isInTargetFolder) continue;
+        var type = "new_document_in_folder";
+      } else if (ev.includes("new document")) {
+        // General new document trigger: trigger for any new doc
+        if (!isNewlyCreated) continue;
+        var type = "new_document";
+      } else {
+        // Not a supported trigger event for new documents
+        continue;
+      }
 
       const existingRun = await prismaClient.zapRun.findFirst({
         where: {
@@ -252,6 +246,8 @@ router.all("/webhook", async (req: Request, res: Response): Promise<any> => {
       console.log("[Docs] New document created", {
         name: fileMeta.data.name,
         fileId: file.id,
+        folderId: targetFolderId,
+        inTargetFolder: isInTargetFolder,
       });
 
       await prismaClient.$transaction(async (tx) => {
