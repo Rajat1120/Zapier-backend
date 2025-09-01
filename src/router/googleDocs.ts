@@ -121,13 +121,6 @@ router.post("/watch", async (req: Request, res: Response): Promise<any> => {
 
 // Webhook endpoint for Docs (backed by Drive changes)
 router.all("/webhook", async (req: Request, res: Response): Promise<any> => {
-  // Log all incoming webhook requests for debugging
-  console.log("[Docs] Webhook endpoint hit", {
-    method: req.method,
-    headers: req.headers,
-    body: req.body,
-    query: req.query,
-  });
 
   // Respond to HEAD requests immediately (Google may verify endpoint)
   if (req.method === "HEAD") {
@@ -140,14 +133,11 @@ router.all("/webhook", async (req: Request, res: Response): Promise<any> => {
     let channelId = headers["x-goog-channel-id"];
     if (Array.isArray(channelId)) channelId = channelId[0];
 
-    console.log("[Docs] Webhook received", { channelId });
-
     const watch = await prismaClient.google_drive_watch.findFirst({
       where: { channelId: channelId as string },
     });
 
     if (!watch) {
-      console.warn("[Docs] Watch not found for channel", { channelId });
       res.status(404).json({ message: "Watch not found" });
       return;
     }
@@ -167,14 +157,12 @@ router.all("/webhook", async (req: Request, res: Response): Promise<any> => {
       }
     );
 
-    console.log("[Docs] Changes received", {
-      count: Array.isArray(data.changes) ? data.changes.length : 0,
-    });
-
     for (const change of data.changes || []) {
       const file = change.file;
       const fileId: string | undefined = file?.id;
       if (!fileId) continue;
+      
+      // Skip trashed/deleted files immediately
       if (file?.trashed) continue;
 
       // Only process Google Docs
@@ -238,22 +226,19 @@ router.all("/webhook", async (req: Request, res: Response): Promise<any> => {
       const isNewDocEvent = ev.includes("new document");
       const isUpdatedDocEvent = ev.includes("updated document");
 
+      // Only trigger on NEW document creation, not updates or deletions
       const shouldCreateForNewDocInFolder =
         isNewDocInFolderEvent && isNewlyCreated && isInTargetFolder;
       const shouldCreateForNewDoc = isNewDocEvent && isNewlyCreated;
-      const shouldCreateForUpdatedDoc =
-        isUpdatedDocEvent && isUpdated && (!targetFolderId || isInTargetFolder);
-
+      
+      // Remove updated document logic since user only wants new document creation
       const shouldCreate =
-        shouldCreateForNewDocInFolder ||
-        shouldCreateForNewDoc ||
-        shouldCreateForUpdatedDoc;
+        shouldCreateForNewDocInFolder || shouldCreateForNewDoc;
+      
       if (!shouldCreate) continue;
 
       const type = shouldCreateForNewDocInFolder
         ? "new_document_in_folder"
-        : shouldCreateForUpdatedDoc
-        ? "updated_document"
         : "new_document";
 
       const existingRun = await prismaClient.zapRun.findFirst({
@@ -264,12 +249,9 @@ router.all("/webhook", async (req: Request, res: Response): Promise<any> => {
       });
       if (existingRun) continue;
 
-      console.log("[Docs] Detected", type, {
-        zapId: watch.zapId,
-        fileId: file.id,
+      console.log("[Docs] New document created", {
         name: fileMeta.data.name,
-        parents,
-        targetFolderId,
+        fileId: file.id,
       });
 
       await prismaClient.$transaction(async (tx) => {
