@@ -16,6 +16,7 @@ import gmailRouter from "./router/gmail";
 import googleCalendarRouter from "./router/googleCalendar";
 import googleSlidesRouter from "./router/googleSlides";
 import googleSheetsRouter from "./router/googleSheets";
+import googleDocsRouter from "./router/googleDocs";
 
 const client = new PrismaClient();
 
@@ -76,6 +77,7 @@ app.use("/api/gmail", gmailRouter);
 app.use("/api/google-calendar", googleCalendarRouter);
 app.use("/api/google-slides", googleSlidesRouter);
 app.use("/api/google-sheets", googleSheetsRouter);
+app.use("/api/google-docs", googleDocsRouter);
 
 app.get("/", (req, res) => {
   res.status(200).send("🚀 Zapier backend is live");
