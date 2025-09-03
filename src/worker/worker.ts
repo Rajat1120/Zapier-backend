@@ -2,6 +2,8 @@ import Redis from "ioredis";
 import { prismaClient } from "../db/database";
 import { parse } from "./parser";
 import { sendEmail } from "./email";
+import axios from "axios";
+import { getTokenForUser } from "../utils/googleTokens";
 
 if (!process.env.REDIS_URL)
   throw new Error("REDIS_URL environment variable is not defined");
@@ -90,7 +92,387 @@ export async function Consumer() {
 
         const zapRunMetadata = zapRunDetails?.metadata;
 
-        if (currentAction.type?.id === "email") {
+        // Get action event from database
+        const actionEvent = currentAction.actionEvent;
+        console.log("🎬 Action Event:", actionEvent);
+
+        // Execute action based on actionEvent
+        if (actionEvent === "Archive Email") {
+          console.log("📧 About to archive email");
+          
+          const metadata = currentAction.metadata as {
+            messageId: string;
+          };
+
+          const messageId = parse(metadata.messageId, zapRunMetadata);
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            await axios.post(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
+              {
+                removeLabelIds: ["INBOX"]
+              },
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            console.log("✅ Email archived successfully");
+          } catch (error) {
+            console.error("❌ Failed to archive email:", error);
+          }
+        }
+
+        else if (actionEvent === "Delete Email") {
+          console.log("🗑️ About to delete email");
+          
+          const metadata = currentAction.metadata as {
+            messageId: string;
+          };
+
+          const messageId = parse(metadata.messageId, zapRunMetadata);
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            await axios.post(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/trash`,
+              {},
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            console.log("✅ Email deleted successfully");
+          } catch (error) {
+            console.error("❌ Failed to delete email:", error);
+          }
+        }
+
+        else if (actionEvent === "Add label to email") {
+          console.log("🏷️ About to add label to email");
+          
+          const metadata = currentAction.metadata as {
+            messageId: string;
+            labelName: string;
+          };
+
+          const messageId = parse(metadata.messageId, zapRunMetadata);
+          const labelName = parse(metadata.labelName, zapRunMetadata);
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            // First get or create the label
+            const labelsResponse = await axios.get(
+              'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            let labelId = labelsResponse.data.labels.find(
+              (label: any) => label.name === labelName
+            )?.id;
+
+            if (!labelId) {
+              // Create label if it doesn't exist
+              const createLabelResponse = await axios.post(
+                'https://gmail.googleapis.com/gmail/v1/users/me/labels',
+                {
+                  name: labelName,
+                  labelListVisibility: 'labelShow',
+                  messageListVisibility: 'show'
+                },
+                {
+                  headers: { Authorization: `Bearer ${access_token}` }
+                }
+              );
+              labelId = createLabelResponse.data.id;
+            }
+
+            // Add label to message
+            await axios.post(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
+              {
+                addLabelIds: [labelId]
+              },
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            console.log("✅ Label added to email successfully");
+          } catch (error) {
+            console.error("❌ Failed to add label to email:", error);
+          }
+        }
+
+        else if (actionEvent === "Clear Spreadsheet Row(s)") {
+          console.log("🧹 About to clear spreadsheet rows");
+          
+          const metadata = currentAction.metadata as {
+            spreadsheetId: string;
+            range: string;
+          };
+
+          const spreadsheetId = parse(metadata.spreadsheetId, zapRunMetadata);
+          const range = parse(metadata.range, zapRunMetadata);
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            await axios.post(
+              `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:clear`,
+              {},
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            console.log("✅ Spreadsheet rows cleared successfully");
+          } catch (error) {
+            console.error("❌ Failed to clear spreadsheet rows:", error);
+          }
+        }
+
+        else if (actionEvent === "Create Spreadsheet") {
+          console.log("📊 About to create spreadsheet");
+          
+          const metadata = currentAction.metadata as {
+            title: string;
+            headers?: string[];
+          };
+
+          const title = parse(metadata.title, zapRunMetadata);
+          const headers = metadata.headers?.map(h => parse(h, zapRunMetadata));
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            const spreadsheetData: any = {
+              properties: {
+                title
+              }
+            };
+
+            if (headers && headers.length > 0) {
+              spreadsheetData.sheets = [{
+                data: [{
+                  rowData: [{
+                    values: headers.map(header => ({ userEnteredValue: { stringValue: header } }))
+                  }]
+                }]
+              }];
+            }
+
+            await axios.post(
+              'https://sheets.googleapis.com/v4/spreadsheets',
+              spreadsheetData,
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            console.log("✅ Spreadsheet created successfully");
+          } catch (error) {
+            console.error("❌ Failed to create spreadsheet:", error);
+          }
+        }
+
+        else if (actionEvent === "Create Document from text") {
+          console.log("📝 About to create Google Doc from text");
+          
+          const metadata = currentAction.metadata as {
+            title: string;
+            content: string;
+          };
+
+          const title = parse(metadata.title, zapRunMetadata);
+          const content = parse(metadata.content, zapRunMetadata);
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            const docResponse = await axios.post(
+              'https://docs.googleapis.com/v1/documents',
+              { title },
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            const documentId = docResponse.data.documentId;
+
+            if (content) {
+              await axios.post(
+                `https://docs.googleapis.com/v1/documents/${documentId}:batchUpdate`,
+                {
+                  requests: [{
+                    insertText: {
+                      location: { index: 1 },
+                      text: content
+                    }
+                  }]
+                },
+                {
+                  headers: { Authorization: `Bearer ${access_token}` }
+                }
+              );
+            }
+
+            console.log("✅ Google Doc created successfully");
+          } catch (error) {
+            console.error("❌ Failed to create Google Doc:", error);
+          }
+        }
+
+        else if (actionEvent === "Create File From Text") {
+          console.log("📁 About to create file from text in Google Drive");
+          
+          const metadata = currentAction.metadata as {
+            name: string;
+            content: string;
+            folderId?: string;
+          };
+
+          const name = parse(metadata.name, zapRunMetadata);
+          const content = parse(metadata.content, zapRunMetadata);
+          const folderId = metadata.folderId ? parse(metadata.folderId, zapRunMetadata) : undefined;
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            const fileMetadata: any = {
+              name,
+              mimeType: 'text/plain'
+            };
+
+            if (folderId) {
+              fileMetadata.parents = [folderId];
+            }
+
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(fileMetadata)], {type: 'application/json'}));
+            form.append('file', new Blob([content], {type: 'text/plain'}));
+
+            await axios.post(
+              'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+              form,
+              {
+                headers: { 
+                  Authorization: `Bearer ${access_token}`,
+                  'Content-Type': 'multipart/related'
+                }
+              }
+            );
+
+            console.log("✅ File created from text successfully");
+          } catch (error) {
+            console.error("❌ Failed to create file from text:", error);
+          }
+        }
+
+        else if (actionEvent === "Create Folder") {
+          console.log("📁 About to create folder in Google Drive");
+          
+          const metadata = currentAction.metadata as {
+            name: string;
+            parentId?: string;
+          };
+
+          const name = parse(metadata.name, zapRunMetadata);
+          const parentId = metadata.parentId ? parse(metadata.parentId, zapRunMetadata) : undefined;
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            const folderMetadata: any = {
+              name,
+              mimeType: 'application/vnd.google-apps.folder'
+            };
+
+            if (parentId) {
+              folderMetadata.parents = [parentId];
+            }
+
+            await axios.post(
+              'https://www.googleapis.com/drive/v3/files',
+              folderMetadata,
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            console.log("✅ Folder created successfully");
+          } catch (error) {
+            console.error("❌ Failed to create folder:", error);
+          }
+        }
+
+        else if (actionEvent === "Copy File") {
+          console.log("📋 About to copy file in Google Drive");
+          
+          const metadata = currentAction.metadata as {
+            fileId: string;
+            name?: string;
+            parentId?: string;
+          };
+
+          const fileId = parse(metadata.fileId, zapRunMetadata);
+          const name = metadata.name ? parse(metadata.name, zapRunMetadata) : undefined;
+          const parentId = metadata.parentId ? parse(metadata.parentId, zapRunMetadata) : undefined;
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            const copyMetadata: any = {};
+            if (name) copyMetadata.name = name;
+            if (parentId) copyMetadata.parents = [parentId];
+
+            await axios.post(
+              `https://www.googleapis.com/drive/v3/files/${fileId}/copy`,
+              copyMetadata,
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            console.log("✅ File copied successfully");
+          } catch (error) {
+            console.error("❌ Failed to copy file:", error);
+          }
+        }
+
+        else if (actionEvent === "Delete File") {
+          console.log("🗑️ About to delete file in Google Drive");
+          
+          const metadata = currentAction.metadata as {
+            fileId: string;
+          };
+
+          const fileId = parse(metadata.fileId, zapRunMetadata);
+
+          try {
+            const { access_token } = await getTokenForUser(zapRunDetails?.zap.userId!);
+            
+            await axios.delete(
+              `https://www.googleapis.com/drive/v3/files/${fileId}`,
+              {
+                headers: { Authorization: `Bearer ${access_token}` }
+              }
+            );
+
+            console.log("✅ File deleted successfully");
+          } catch (error) {
+            console.error("❌ Failed to delete file:", error);
+          }
+        }
+
+        // Legacy email action for backward compatibility
+        else if (currentAction.type?.id === "email") {
           console.log("📧 About to send email");
 
           const metadata = currentAction.metadata as {
