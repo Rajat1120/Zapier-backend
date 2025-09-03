@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "npx prisma generate && tsc -b &&  node dist/index.js"
+    "start": "npx prisma generate && tsc -b &&  node dist/index.js",
+    "fix-scopes": "npx prisma generate && tsc -b && node dist/scripts/fixGoogleTokenScopes.js",
+    "test-gmail-token": "npx prisma generate && tsc -b && node dist/scripts/testGmailToken.js"
   },
   "keywords": [],
   "author": "",
