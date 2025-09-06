@@ -87,7 +87,7 @@ export async function refreshDriveWatches() {
         where: { zapId },
       });
 
-      // If expiration is in milliseconds (e.g., 1722092316000)
+      // Expiration from API is in milliseconds (UTC)
       const utcDate = new Date(Number(expiration));
 
       // Convert to IST (UTC + 5:30)
