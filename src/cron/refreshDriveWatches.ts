@@ -121,7 +121,7 @@ export async function refreshDriveWatches() {
     // Show the next watch that would expire
     const nextWatch = await prismaClient.google_drive_watch.findFirst({
       where: {
-        // zap: { published: true }, // Temporarily commented out for testing
+         zap: { published: true }, 
         expiration: { gt: currentTime }
       },
       orderBy: {
@@ -197,7 +197,7 @@ export async function refreshDriveWatches() {
           type: "web_hook",
           address: webhookUrl,
           // Optional: Request specific expiration (Google may override)
-          expiration: (Date.now() + 7 * 24 * 60 * 60 * 1000).toString(), // Request 7 days
+          expiration: (Date.now() + 1 * 60 * 60 * 1000).toString(), // Request 1 hour
         },
         {
           headers: {

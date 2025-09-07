@@ -312,28 +312,35 @@ export async function Consumer() {
             }
           } else if (actionEvent === "Clear Spreadsheet Row(s)") {
             console.log("🧹 About to clear spreadsheet rows");
-
+          
             const metadata = currentAction.metadata as {
               spreadsheetId: string;
-              range: string;
+              worksheetName: string;
+              rows: number[];
             };
-
+          
             const spreadsheetId = parse(metadata.spreadsheetId, zapRunMetadata);
-            const range = parse(metadata.range, zapRunMetadata);
-
+            const worksheetName = parse(metadata.worksheetName, zapRunMetadata);
+            const rows = metadata.rows;
+          
             try {
               const { access_token } = await getTokenForUser(
                 zapRunDetails?.zap.userId!
               );
-
-              await axios.post(
-                `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:clear`,
-                {},
-                {
-                  headers: { Authorization: `Bearer ${access_token}` },
-                }
-              );
-
+          
+              for (const row of rows) {
+                const range = `${worksheetName}!${row}:${row}`;
+                console.log(`🧽 Clearing row: ${range}`);
+          
+                await axios.post(
+                  `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:clear`,
+                  {},
+                  {
+                    headers: { Authorization: `Bearer ${access_token}` },
+                  }
+                );
+              }
+          
               console.log("✅ Spreadsheet rows cleared successfully");
             } catch (error) {
               console.error("❌ Failed to clear spreadsheet rows:", error);

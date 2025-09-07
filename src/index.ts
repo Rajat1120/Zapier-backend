@@ -87,8 +87,8 @@ setInterval(() => {
   refreshGoogleTokens();
 }, 30 * 60 * 1000);
 
-// Runs every 20 minutes
-cron.schedule("*/1 * * * *", async () => {
+// Runs every 30 minutes
+cron.schedule("*/30 * * * *", async () => {
   console.log("⏰ Checking expiring Google Drive watches...");
   await refreshDriveWatches();
 });
