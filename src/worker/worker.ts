@@ -387,17 +387,27 @@ export async function Consumer() {
                 ];
               }
 
-              // Stamp with appProperties to prevent loops
-              spreadsheetData.properties.appProperties = {
-                origin: "zap-engine",
-                originZapId: zapRunDetails?.zap.id,
-                originNodeId: currentAction.id,
-                originZapRunId: zapRunDetails?.id,
-              };
-
-              await axios.post(
+              const spreadsheetResponse = await axios.post(
                 "https://sheets.googleapis.com/v4/spreadsheets",
                 spreadsheetData,
+                {
+                  headers: { Authorization: `Bearer ${access_token}` },
+                }
+              );
+
+              const spreadsheetId = spreadsheetResponse.data.spreadsheetId;
+
+              // Stamp with appProperties using Drive API
+              await axios.patch(
+                `https://www.googleapis.com/drive/v3/files/${spreadsheetId}`,
+                {
+                  appProperties: {
+                    origin: "zap-engine",
+                    originZapId: zapRunDetails?.zap.id,
+                    originNodeId: currentAction.id,
+                    originZapRunId: zapRunDetails?.id,
+                  },
+                },
                 {
                   headers: { Authorization: `Bearer ${access_token}` },
                 }
