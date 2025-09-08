@@ -351,6 +351,7 @@ export async function Consumer() {
             const metadata = currentAction.metadata as {
               title: string;
               headers?: string[];
+              copySpreadsheetId?: string;
             };
 
             const title = parse(metadata.title, zapRunMetadata);
@@ -363,57 +364,88 @@ export async function Consumer() {
                 zapRunDetails?.zap.userId!
               );
 
-              const spreadsheetData: any = {
-                properties: {
-                  title,
-                },
-              };
+              const copySpreadsheetId = metadata.copySpreadsheetId;
 
-              if (headers && headers.length > 0) {
-                spreadsheetData.sheets = [
+              if (copySpreadsheetId) {
+                const copyResponse = await axios.post(
+                  `https://www.googleapis.com/drive/v3/files/${copySpreadsheetId}/copy`,
+                  { name: title },
                   {
-                    data: [
-                      {
-                        rowData: [
-                          {
-                            values: headers.map((header) => ({
-                              userEnteredValue: { stringValue: header },
-                            })),
-                          },
-                        ],
-                      },
-                    ],
+                    headers: { Authorization: `Bearer ${access_token}` },
+                  }
+                );
+                const spreadsheetId = copyResponse.data.id;
+
+                // Stamp with appProperties using Drive API
+                await axios.patch(
+                  `https://www.googleapis.com/drive/v3/files/${spreadsheetId}`,
+                  {
+                    appProperties: {
+                      origin: "zap-engine",
+                      originZapId: zapRunDetails?.zap.id,
+                      originNodeId: currentAction.id,
+                      originZapRunId: zapRunDetails?.id,
+                    },
                   },
-                ];
+                  {
+                    headers: { Authorization: `Bearer ${access_token}` },
+                  }
+                );
+
+                console.log("✅ Spreadsheet copied successfully");
+              } else {
+                const spreadsheetData: any = {
+                  properties: {
+                    title,
+                  },
+                };
+
+                if (headers && headers.length > 0) {
+                  spreadsheetData.sheets = [
+                    {
+                      data: [
+                        {
+                          rowData: [
+                            {
+                              values: headers.map((header) => ({
+                                userEnteredValue: { stringValue: header },
+                              })),
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ];
+                }
+
+                const spreadsheetResponse = await axios.post(
+                  "https://sheets.googleapis.com/v4/spreadsheets",
+                  spreadsheetData,
+                  {
+                    headers: { Authorization: `Bearer ${access_token}` },
+                  }
+                );
+
+                const spreadsheetId = spreadsheetResponse.data.spreadsheetId;
+
+                // Stamp with appProperties using Drive API
+                await axios.patch(
+                  `https://www.googleapis.com/drive/v3/files/${spreadsheetId}`,
+                  {
+                    appProperties: {
+                      origin: "zap-engine",
+                      originZapId: zapRunDetails?.zap.id,
+                      originNodeId: currentAction.id,
+                      originZapRunId: zapRunDetails?.id,
+                    },
+                  },
+                  {
+                    headers: { Authorization: `Bearer ${access_token}` },
+                  }
+                );
+
+                console.log("✅ Spreadsheet created successfully");
               }
-
-              const spreadsheetResponse = await axios.post(
-                "https://sheets.googleapis.com/v4/spreadsheets",
-                spreadsheetData,
-                {
-                  headers: { Authorization: `Bearer ${access_token}` },
-                }
-              );
-
-              const spreadsheetId = spreadsheetResponse.data.spreadsheetId;
-
-              // Stamp with appProperties using Drive API
-              await axios.patch(
-                `https://www.googleapis.com/drive/v3/files/${spreadsheetId}`,
-                {
-                  appProperties: {
-                    origin: "zap-engine",
-                    originZapId: zapRunDetails?.zap.id,
-                    originNodeId: currentAction.id,
-                    originZapRunId: zapRunDetails?.id,
-                  },
-                },
-                {
-                  headers: { Authorization: `Bearer ${access_token}` },
-                }
-              );
-
-              console.log("✅ Spreadsheet created successfully");
             } catch (error) {
               console.error("❌ Failed to create spreadsheet:", error);
             }

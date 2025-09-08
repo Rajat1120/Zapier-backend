@@ -82,6 +82,7 @@ model ZapRun {
   zapId        String
   metadata     Json
   recursionLevel Int @default(0)
+  createdAt    DateTime     @default(now())
   zap          Zap           @relation(fields: [zapId], references: [id])
   zapRunOutbox ZapRunOutbox?
    @@index([zapId])

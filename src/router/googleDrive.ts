@@ -106,12 +106,15 @@ router.post("/webhook", async (req, res) => {
       channelId = channelId[0];
     }
 
+    console.log(`[Drive] Webhook called for channelId: ${channelId}`);
+
     // Find the corresponding watch entry in the database using the channel ID
     const watch = await prismaClient.google_drive_watch.findFirst({
       where: { channelId: channelId as string },
     });
 
     if (!watch) {
+      console.log(`[Drive] No watch found for channelId: ${channelId}`);
       res.status(404).json({ message: "Watch not found" });
       return;
     }
@@ -130,10 +133,12 @@ router.post("/webhook", async (req, res) => {
         },
         params: {
           pageToken: pageToken,
-          fields: "changes(file(id,name,mimeType,trashed,parents)),newStartPageToken",
+          fields: "changes(time, file(id,name,mimeType,trashed,parents)),newStartPageToken",
         },
       }
     );
+
+    console.log(`[Drive] Fetched ${data.changes.length} changes for zapId: ${watch.zapId}`);
 
     for (const change of data.changes) {
       const file = change.file;
@@ -221,30 +226,40 @@ router.post("/webhook", async (req, res) => {
       });
 
       if (!trigger || trigger.type?.name !== "Google drive") {
+        console.log(`[Drive] Invalid trigger for zapId: ${watch.zapId}, trigger: ${JSON.stringify(trigger)}`);
         continue;
       }
 
       const meta = (trigger.metadata as any) ?? {};
       const targetFolderId = typeof meta.folderId === "string" ? meta.folderId : "";
+      console.log(`[Drive] Trigger metadata: ${JSON.stringify(meta)}, targetFolderId: '${targetFolderId}'`);
 
       const createdAt = new Date(fileMeta.data.createdTime);
       const timeDiffMinutes = (now - createdAt.getTime()) / (1000 * 60);
       const isNewlyCreated = timeDiffMinutes < 1;
       const modifiedAt = new Date(fileMeta.data.modifiedTime);
-      const isUpdated = !isNewlyCreated && now - modifiedAt.getTime() < 60 * 1000;
+      const changeTime = new Date(change.time);
+      const changeDiffSeconds = (now - changeTime.getTime()) / 1000;
+      const isUpdated = !isNewlyCreated && changeDiffSeconds < 60;
+
+      console.log(`[Drive] Time checks - now: ${new Date(now).toISOString()}, createdAt: ${createdAt.toISOString()}, modifiedAt: ${modifiedAt.toISOString()}, changeTime: ${changeTime.toISOString()}, timeDiffMinutes: ${timeDiffMinutes.toFixed(2)}, changeDiffSeconds: ${changeDiffSeconds.toFixed(2)}, isNewlyCreated: ${isNewlyCreated}, isUpdated: ${isUpdated}`);
 
       const parents: string[] = Array.isArray(fileMeta.data.parents) ? fileMeta.data.parents : [];
       const isInTargetFolder = targetFolderId ? parents.includes(targetFolderId) : false;
 
-      // Evaluate against trigger events
-      const ev = (trigger.triggerEvent || "").toLowerCase();
+      // Evaluate against trigger events with case-insensitive normalization
+      // Normalize trigger event: trim whitespace, convert to lowercase for matching
+      const normalizedTriggerEvent = (trigger.triggerEvent || "").trim().toLowerCase();
+      console.log(`[Drive] Evaluating trigger for zapId: ${watch.zapId}, original: '${trigger.triggerEvent}', normalized: '${normalizedTriggerEvent}'`);
 
-      const shouldCreateForNewFile = ev.includes("new file") && isNewlyCreated;
+      const shouldCreateForNewFile = normalizedTriggerEvent.includes("new file") && isNewlyCreated;
       const shouldCreateForNewFileInFolder =
-        ev.includes("new file in folder") && isNewlyCreated && isInTargetFolder;
+        normalizedTriggerEvent.includes("new file in folder") && isNewlyCreated && isInTargetFolder;
       const shouldCreateForNewFolder =
-        ev.includes("new folder") && isNewlyCreated && fileMeta.data.mimeType === "application/vnd.google-apps.folder";
-      const shouldCreateForUpdatedFile = ev.includes("updated file") && isUpdated && (!targetFolderId || isInTargetFolder);
+        normalizedTriggerEvent.includes("new folder") && isNewlyCreated && fileMeta.data.mimeType === "application/vnd.google-apps.folder";
+      const shouldCreateForUpdatedFile = normalizedTriggerEvent.includes("updated file") && isUpdated && (!targetFolderId || isInTargetFolder);
+
+      console.log(`[Drive] Conditions - newFile: ${shouldCreateForNewFile}, newFileInFolder: ${shouldCreateForNewFileInFolder}, newFolder: ${shouldCreateForNewFolder}, updatedFile: ${shouldCreateForUpdatedFile}, isUpdated: ${isUpdated}, isInTargetFolder: ${isInTargetFolder}`);
 
       const shouldCreate =
         shouldCreateForNewFile ||
@@ -252,7 +267,9 @@ router.post("/webhook", async (req, res) => {
         shouldCreateForNewFolder ||
         shouldCreateForUpdatedFile;
 
+      // Log if no matching trigger event found
       if (!shouldCreate) {
+        console.log(`[Drive] No matching trigger event for '${normalizedTriggerEvent}' on file: ${file.id}, skipping`);
         continue;
       }
 
@@ -268,10 +285,27 @@ router.post("/webhook", async (req, res) => {
       const existingRun = await prismaClient.zapRun.findFirst({
         where: {
           zapId: watch.zapId,
-          metadata: { path: ["driveFileId"], equals: file.id } as any,
+          AND: [
+            { metadata: { path: ["driveFileId"], equals: file.id } },
+            { metadata: { path: ["type"], equals: type } }
+          ]
         },
+        // @ts-ignore
+        orderBy: { createdAt: 'desc' }
       });
-      if (existingRun) continue;
+      if (existingRun) {
+        // @ts-ignore
+        const timeDiff = Date.now() - existingRun.createdAt.getTime();
+        if (type === "updated_file") {
+          if (timeDiff < 15 * 60 * 1000) {  // 15 minutes
+            console.log(`[Drive] Skipping recent updated_file for file ${file.id}, existing run: ${existingRun.id}, timeDiff: ${timeDiff}ms`);
+            continue;
+          }
+        } else {
+          console.log(`[Drive] Skipping duplicate ${type} for file ${file.id}, existing run: ${existingRun.id}`);
+          continue;
+        }
+      }
 
       console.log("[Drive] Detected", type, {
         zapId: watch.zapId,
