@@ -81,6 +81,7 @@ model ZapRun {
   id           String        @id @default(uuid())
   zapId        String
   metadata     Json
+  recursionLevel Int @default(0)
   zap          Zap           @relation(fields: [zapId], references: [id])
   zapRunOutbox ZapRunOutbox?
    @@index([zapId])

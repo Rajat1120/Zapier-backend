@@ -152,7 +152,7 @@ router.post("/webhook", async (req, res) => {
       // Mark this file as being processed immediately to prevent race conditions
       recentlyProcessed.set(fileId, now);
 
-      // Get detailed file metadata
+      // Get detailed file metadata including appProperties
       const fileMeta = await axios.get(
         `https://www.googleapis.com/drive/v3/files/${file.id}`,
         {
@@ -160,10 +160,50 @@ router.post("/webhook", async (req, res) => {
             Authorization: `Bearer ${accessToken}`,
           },
           params: {
-            fields: "createdTime,modifiedTime,name,mimeType,parents,trashed",
+            fields: "createdTime,modifiedTime,name,mimeType,parents,trashed,appProperties",
           },
         }
       );
+
+      // Check for self-generated files to prevent infinite loops
+      const appProperties = fileMeta.data.appProperties || {};
+      const requiredFields = ["origin", "originZapId", "originNodeId", "originZapRunId"];
+      const detectedFields = Object.keys(appProperties);
+      const hasAllRequiredFields = requiredFields.every(field => appProperties.hasOwnProperty(field));
+
+      // Filter out files created by the zap engine
+      if (appProperties.origin === "zap-engine" && appProperties.originZapId === watch.zapId) {
+        console.log(JSON.stringify({
+          event: "drive_file_filtered",
+          fileId: file.id,
+          reason: "self-generated",
+          zapId: watch.zapId,
+          zapRunId: null, // No triggering run for filtered files
+          timestamp: new Date().toISOString(),
+        }));
+        continue; // Skip processing this file
+      }
+
+      // Log warning for missing or incomplete appProperties
+      if (!hasAllRequiredFields && detectedFields.length > 0) {
+        console.log(JSON.stringify({
+          event: "appProperties_incomplete",
+          fileId: file.id,
+          detectedFields,
+          expectedFields: requiredFields,
+          action: "proceed",
+          timestamp: new Date().toISOString(),
+        }));
+      } else if (detectedFields.length === 0) {
+        console.log(JSON.stringify({
+          event: "appProperties_missing",
+          fileId: file.id,
+          detectedFields: [],
+          expectedFields: requiredFields,
+          action: "proceed",
+          timestamp: new Date().toISOString(),
+        }));
+      }
 
       // Skip if file is trashed (double check)
       if (fileMeta.data.trashed) {
@@ -242,9 +282,32 @@ router.post("/webhook", async (req, res) => {
       });
 
       await prismaClient.$transaction(async (tx) => {
+        // Check for recursion guard
+        const currentRecursionLevel = appProperties.originZapRunId
+          ? await tx.zapRun.findUnique({
+              where: { id: appProperties.originZapRunId },
+              select: { recursionLevel: true },
+            }).then(run => run?.recursionLevel || 0)
+          : 0;
+
+        const maxAllowedRecursion = 1; // Configurable limit
+
+        if (currentRecursionLevel >= maxAllowedRecursion) {
+          console.log(JSON.stringify({
+            event: "zaprun_recursion_prevented",
+            zapRunId: "pending", // Will be assigned when created
+            recursionLevel: currentRecursionLevel + 1,
+            maxAllowed: maxAllowedRecursion,
+            triggeringFile: file.id,
+            timestamp: new Date().toISOString(),
+          }));
+          return; // Exit early without throwing error
+        }
+
         const run = await tx.zapRun.create({
           data: {
             zapId: watch.zapId,
+            recursionLevel: currentRecursionLevel + 1,
             metadata: {
               source: "google_drive",
               type,

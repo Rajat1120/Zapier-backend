@@ -387,6 +387,14 @@ export async function Consumer() {
                 ];
               }
 
+              // Stamp with appProperties to prevent loops
+              spreadsheetData.properties.appProperties = {
+                origin: "zap-engine",
+                originZapId: zapRunDetails?.zap.id,
+                originNodeId: currentAction.id,
+                originZapRunId: zapRunDetails?.id,
+              };
+
               await axios.post(
                 "https://sheets.googleapis.com/v4/spreadsheets",
                 spreadsheetData,
@@ -444,6 +452,22 @@ export async function Consumer() {
                 );
               }
 
+              // Stamp with appProperties to prevent loops
+              await axios.patch(
+                `https://www.googleapis.com/drive/v3/files/${documentId}`,
+                {
+                  appProperties: {
+                    origin: "zap-engine",
+                    originZapId: zapRunDetails?.zap.id,
+                    originNodeId: currentAction.id,
+                    originZapRunId: zapRunDetails?.id,
+                  },
+                },
+                {
+                  headers: { Authorization: `Bearer ${access_token}` },
+                }
+              );
+
               console.log("✅ Google Doc created successfully");
             } catch (error) {
               console.error("❌ Failed to create Google Doc:", error);
@@ -471,6 +495,12 @@ export async function Consumer() {
               const fileMetadata: any = {
                 name,
                 mimeType: "text/plain",
+                appProperties: {
+                  origin: "zap-engine",
+                  originZapId: zapRunDetails?.zap.id,
+                  originNodeId: currentAction.id,
+                  originZapRunId: zapRunDetails?.id,
+                },
               };
 
               if (folderId) {
@@ -522,6 +552,12 @@ export async function Consumer() {
               const folderMetadata: any = {
                 name,
                 mimeType: "application/vnd.google-apps.folder",
+                appProperties: {
+                  origin: "zap-engine",
+                  originZapId: zapRunDetails?.zap.id,
+                  originNodeId: currentAction.id,
+                  originZapRunId: zapRunDetails?.id,
+                },
               };
 
               if (parentId) {
@@ -566,9 +602,26 @@ export async function Consumer() {
               if (name) copyMetadata.name = name;
               if (parentId) copyMetadata.parents = [parentId];
 
-              await axios.post(
+              const copyResponse = await axios.post(
                 `https://www.googleapis.com/drive/v3/files/${fileId}/copy`,
                 copyMetadata,
+                {
+                  headers: { Authorization: `Bearer ${access_token}` },
+                }
+              );
+
+              // Stamp the copied file with appProperties to prevent loops
+              const copiedFileId = copyResponse.data.id;
+              await axios.patch(
+                `https://www.googleapis.com/drive/v3/files/${copiedFileId}`,
+                {
+                  appProperties: {
+                    origin: "zap-engine",
+                    originZapId: zapRunDetails?.zap.id,
+                    originNodeId: currentAction.id,
+                    originZapRunId: zapRunDetails?.id,
+                  },
+                },
                 {
                   headers: { Authorization: `Bearer ${access_token}` },
                 }
